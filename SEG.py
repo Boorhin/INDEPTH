@@ -3,7 +3,7 @@ Seg =  ["TIB01_56-175.sgy", "TIB01_176-275.sgy", "TIB01_276-375.sgy", "TIB01_376
 EBDIC = 3200
 Reel  = 400
 
-with open(filename+'mod', 'wb') as new:
+with open('TIB01_cat.sgy', 'wb') as new:
     with open(Seg[0], 'rb') as fo:
         new.write(fo.read())
     for filename in Seg[1:]:
