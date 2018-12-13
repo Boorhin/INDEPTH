@@ -14,7 +14,12 @@ def grey(title):
 ####DATA LOADING
 Flow('RSF/TIB01 RSF/TIB01_T RSF/TIB01_H RSF/TIB01_B', 'TIB01.sgy','segyread tape="$SOURCE" tfile=${TARGETS[1]} hfile=${TARGETS[2]} bfile=${TARGETS[3]}',stdin=0 )
 Flow('RSF/Cube', 'RSF/TIB01', 'sfintbin axis=n2 xk=tracf yk=fldr mask="Utils/Cube_mask.rsf" map="Utils/Cube_map.rsf"')
-
+Flow('Utils/Scalel', 'RSF/TIB01_T', 'headermath output="scalel"| dd type=float | window')
+Flow('Utils/Xr', 'RSF/TIB01_T', 'headermath output="gx" | dd type=float | window')
+Flow('Utils/Yr', 'RSF/TIB01_T', 'headermath output="gy" | dd type=float | window')
+Flow('Utils/Xr_Sc', 'Utils/Xr Utils/Scalel', 'math x=${SOURCES[1]} output=input/x')
+Flow('Utils/Yr_Sc', 'Utils/Yr Utils/Scalel', 'math x=${SOURCES[1]} output=input/x')
+Flow('Utils/XYr', 'Utils/Xr_Sc Utils/Yr_Sc', 'cat axis=2 ${SOURCES[1]} | window | transp')
 # # ###Shot processing
 # #
 # # ### to do:
@@ -26,7 +31,7 @@ Flow('RSF/Cube', 'RSF/TIB01', 'sfintbin axis=n2 xk=tracf yk=fldr mask="Utils/Cub
 NaNShots = [3, 4, 14, 108, 157, 171, 254, 257, 302]
 MaskedShots = []
 DeadShots =[0, 5, 6, 27, 28, 40, 41, 50, 51, 55, 77, 78, 90, 110, 112, 115, 116, 124, 125, 141, 158, 159, 177, 192, 208, 209, 226, 241, 244, 306, 307, 318, 319, 325, 326, 344, 345, 358, 359, 364, 383, 384, 405, 406, 428, 428, 440, 441]
-Flow('Utils/Offsets', 'RSF/TIB01_T', 'sfheadermath output="offset" | window')
+Flow('Utils/Offsets', 'RSF/TIB01_T', 'headermath output="offset" | window')
 Flow('Utils/Shot_Mask','', 'spike n1=120 mag=0 | dd type=int')
 
 All =[]
@@ -55,8 +60,6 @@ for i in range(456):
     Compare ='Fig/Compare_%s'%i
     Shot_Mask_bin = 'Shot_mask/Shot_Mask_bin_%s'%i
     MaskedShots.append(Shot_Mask_bin)
-    #Flow(Shot_Mask_bin, 'Utils/Cube_mask', 'window f3=%d n3=1'%i)
-    #if i not in NaNShots:
     All.append(sign3)
     if i in DeadShots:
         Flow(Shot,'RSF/Cube.rsf','window n1=6250 f3=%d n3=1 | headercut mask="Utils/Shot_Mask.rsf"'%i)
@@ -95,10 +98,8 @@ for i in range(456):
 Flow('Utils/Maskheader', MaskedShots, 'rcat ${SOURCES[1:-1]} axis=1')
 Flow('RSF/Filt_line', All, 'rcat ${SOURCES[1:-1]} axis=2')
 Flow('RSF/Masked_line', ['RSF/Filt_line', 'Utils/Maskheader'], 'headerwindow mask=${SOURCES[1]}')
-Flow('CDPs', 'RSF/Masked_line.rsf', 'sfintbin head="RSF/TIB01_T.rsf" axis=n2 xk=xline yk=iline')
-for j in range(1653):
-    PCDP = 'Fig/CDP_Plot_%s'%j
-    Result(PCDP, 'CDPs', 'window f3=%s n3=1 | grey title=%s'%(j, PCDP[4:]))
+Flow(['RSF/CDPs','Utils/Fold'], ['RSF/Masked_line.rsf', 'Utils/XYr'], 'bin dx=25 dy=1 interp=0 fold=${TARGETS[1]} head=${SOURCES[1]} xkey=0 ykey=1 ny=256 nx=64')
+#Result('PCDP', 'CDPs', 'grey3 pclip=99.9 title="CDPs" flat=y movie=3')
 
 #Flow('Merge',All,'cat axis=3' )
 End()
