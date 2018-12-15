@@ -20,6 +20,12 @@ Flow('Utils/Yr', 'RSF/TIB01_T', 'headermath output="gy" | dd type=float | window
 Flow('Utils/Xr_Sc', 'Utils/Xr Utils/Scalel', 'math x=${SOURCES[1]} output=input/x')
 Flow('Utils/Yr_Sc', 'Utils/Yr Utils/Scalel', 'math x=${SOURCES[1]} output=input/x')
 Flow('Utils/XYr', 'Utils/Xr_Sc Utils/Yr_Sc', 'cat axis=2 ${SOURCES[1]} | window | transp')
+Flow('Utils/Offsets', 'RSF/TIB01_T', 'headermath output="offset" | dd type=float | math output="abs(input)/2" | window | put label1="offset"')
+Flow('Utils/fldr', 'RSF/TIB01_T', 'headermath output="fldr"| window')
+Flow('Utils/OffShot', 'Utils/Offsets Utils/fldr', 'cat axis=2 ${SOURCES[1]} | window | transp ')
+Flow('Utils/cdp', 'RSF/TIB01_T', 'headermath output="cdp" | dd type=float | window| put label1="cdp"')
+Flow('Utils/OffCdp', 'Utils/Offsets Utils/cdp', 'cat axis=2 ${SOURCES[1]}| transp')
+Flow('Utils/Shot_Mask','', 'spike n1=120 mag=0 | dd type=int')
 # # ###Shot processing
 # #
 # # ### to do:
@@ -29,12 +35,8 @@ Flow('Utils/XYr', 'Utils/Xr_Sc Utils/Yr_Sc', 'cat axis=2 ${SOURCES[1]} | window 
 # # #    then dip-filter the low velocity component
 # # #    and trashing the low frequency, back rotating after
 NaNShots = [3, 4, 14, 108, 157, 171, 254, 257, 302]
-MaskedShots = []
 DeadShots =[0, 5, 6, 27, 28, 40, 41, 50, 51, 55, 77, 78, 90, 110, 112, 115, 116, 124, 125, 141, 158, 159, 177, 192, 208, 209, 226, 241, 244, 306, 307, 318, 319, 325, 326, 344, 345, 358, 359, 364, 383, 384, 405, 406, 428, 428, 440, 441]
-Flow('Utils/Offsets', 'RSF/TIB01_T', 'headermath output="offset" | window')
-Flow('Utils/Shot_Mask','', 'spike n1=120 mag=0 | dd type=int')
-
-All =[]
+All, MaskedShots = [], []
 for i in range(456):
     Shot ='Shots/Shot_'+str(i)
     Trace ='Trace/Trace_'+str(i)
@@ -59,6 +61,7 @@ for i in range(456):
     Pnoiz ='Fig/Pnoiz_%s'%i
     Compare ='Fig/Compare_%s'%i
     Shot_Mask_bin = 'Shot_mask/Shot_Mask_bin_%s'%i
+    Flow(Shot_Mask_bin, 'Utils/Cube_mask', 'window f3=%d n3=1'%i)
     MaskedShots.append(Shot_Mask_bin)
     All.append(sign3)
     if i in DeadShots:
@@ -98,8 +101,15 @@ for i in range(456):
 Flow('Utils/Maskheader', MaskedShots, 'rcat ${SOURCES[1:-1]} axis=1')
 Flow('RSF/Filt_line', All, 'rcat ${SOURCES[1:-1]} axis=2')
 Flow('RSF/Masked_line', ['RSF/Filt_line', 'Utils/Maskheader'], 'headerwindow mask=${SOURCES[1]}')
-Flow(['RSF/CDPs','Utils/Fold'], ['RSF/Masked_line.rsf', 'Utils/XYr'], 'bin dx=25 dy=1 interp=0 fold=${TARGETS[1]} head=${SOURCES[1]} xkey=0 ykey=1 ny=256 nx=64')
-#Result('PCDP', 'CDPs', 'grey3 pclip=99.9 title="CDPs" flat=y movie=3')
+Flow('RSF/CDPs','RSF/Masked_line.rsf', 'sfintbin axis=n2 xk=cdpt yk=cdp')
+Flow('RSF/Lines','RSF/Masked_line Utils/OffCdp', 'bin head=${SOURCES[1]} xmin=0 xmax=3000 dx=25 dy=1')
 
-#Flow('Merge',All,'cat axis=3' )
+#Flow(['RSF/CDPs','Utils/Fold'], ['RSF/Masked_line.rsf', 'Utils/XYr'], 'bin dx=25 dy=1 interp=1 fold=${TARGETS[1]} head=${SOURCES[1]} xkey=0 ykey=1 ny=1 nx=500')
+
+# Flow('RSF/CDP0s',['RSF/Masked_line.rsf', 'RSF/TIB01_T'], 'sfintbin axis=n2 xk=iline yk=cdp')
+
+### will need to transform in half offsets
+# Flow(['RSF/CDP2s','Utils/Fold'],['RSF/Masked_line.rsf', 'Utils/OffCdp'], 'bin nx=240 dx=50 x0=-6000 ny=3304 dx=1 x0=437 fold=${TARGETS[1]} head=${SOURCES[1]} xkey=0 ykey=1')
+#
+#Result('PCDP', 'CDPs', 'grey3 pclip=99.9 title="CDPs" flat=y movie=3')
 End()
