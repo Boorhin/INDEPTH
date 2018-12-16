@@ -364,7 +364,7 @@ Offsets = np.zeros(len(Pointer)) #copy for keeping mask
 #Diff = Pointer[:]
 for i in range(len(Pointer)):
         #o,r = i/Receivers//1, i%Receivers #pointing inside Offset cube headers
-        Offsets[i] = 2*(([Xr[i], Yr[i], Zr[i]]-Spline[Pointer[i]])**2).sum()**.5//25
+        Offsets[i] = (([Xr[i], Yr[i], Zr[i]]-Spline[Pointer[i]])**2).sum()**.5//25
 
 ####EXPORT HEADER TO RSF####
 New_Head= np.zeros((3,len(Offsets)), dtype=np.int)
