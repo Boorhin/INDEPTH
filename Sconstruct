@@ -113,13 +113,16 @@ for i in range(456):
         #Result(Compare, [PShot, Psign, Pnoiz],'SideBySideAniso')
 Flow('Utils/Maskheader', MaskedShots, 'rcat ${SOURCES[1:-1]} axis=1')
 Flow('RSF/Filt_line', All, 'rcat ${SOURCES[1:-1]} axis=2')
-Flow('RSF/Masked_line', ['RSF/Filt_line', 'Utils/Maskheader'], 'headerwindow mask=${SOURCES[1]}')
-Flow('RSF/CDPs','RSF/Masked_line', 'sfintbin axis=n2 xk=cdpx yk=cdpy mask="Utils/CDPs_mask.rsf" map="Utils/CDPs_map.rsf"')
-# Flow('RSF/Brute_Stack', 'RSF/CDPs', 'stack axis=2')
+Masked_Line = 'RSF/Masked_line'
+Flow(Masked_Line, ['RSF/Filt_line', 'Utils/Maskheader'], 'headerwindow mask=${SOURCES[1]}')
+# Flow('RSF/CDPs',Masked_Line, 'sfintbin axis=n2 xk=cdpx yk=cdpy mask="Utils/CDPs_mask.rsf" map="Utils/CDPs_map.rsf"')
+Flow('New_Head', 'New_Head.dat', 'csv2rsf delimiter="," dtype=int| transp')
+Flow('RSF/CdP2',[Masked_Line, 'New_Head'], 'sfintbin axis=n2 head=${SOURCES[1]} xkey=1 ykey=2 mask="Utils/CDP2_mask.rsf" map="Utils/CDP2_map.rsf"| sfput d3=25 d2=25 label3="CDP" label2="Offset" unit2="m" unit3="m"')
+Flow('RSF/Brute_Stack', 'RSF/CdP2', 'stack axis=2')
 V1= 1500.
 V2= 10000.
 
-for i in range(80,1652, 500):
+for i in range(336,3804, 500):
 #1387+80):
     cdp = 'CDP/cdp_%s'%i
     cdp_mask = 'CDP_Mask/cdp_Mask_%s'%i
@@ -149,10 +152,10 @@ for i in range(80,1652, 500):
     xdip = 'Xdip/Xdip_%s'%i
     hdip = 'Hdip/hdip_%s'%i
     mig = 'MigS/MigS_%s'%i
-    Flow(cdp_mask, 'Utils/CDPs_mask.rsf','window f2=%s n2=1'%i)
+    #Flow(cdp_mask, 'Utils/CDPs_mask.rsf','window f2=%s n2=1'%i)
     # add mute and median filter
-    Flow(cdp, ['RSF/CDPs', cdp_mask], 'window f2=%s n2=1 | sfput d2=25 label2="Offset"| headerwindow mask=${SOURCES[1]} | bandpass flo=10 | pow pow1=2'%i)
-    Result(cdp,  'sfgrey')
+    Flow(cdp, 'RSF/CdP2', 'window f2=%s n2=1 | bandpass flo=10 | pow pow1=2'%i)
+    Result(cdp,  'grey')
     # Flow(FMask, cdp, 'math output="input*input" | mask min=0.01')
     # Flow(Fmask2,Fmask,'dd type=float')
     # Flow(CdP2, [Fmask2, cdp], 'add mode=p ${SOURCES[1]}')
@@ -194,7 +197,8 @@ for i in range(80,1652, 500):
 #########TODO#####
  ###statics###
 #Vo=in header
-#Make a true CMP cube with python headers!
+#Correct CMP for stacking traces in same bin...
+#Reuse horrible CDPx, CDPy?
 
 
 End()

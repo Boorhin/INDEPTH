@@ -44,21 +44,35 @@ def getData (Dir, File, Header):
     TrHead= np.array(TrH)
     return Data, TrHead
 
-def WriteRsf(Array, Dir, Name, Tsample, Rspacing):
+# def WriteRsf(Array, Dir, Name, Tsample, Rspacing):
+#     '''Writes numpy array and its mask into optimised rsf file'''
+#     n1,n2,n3 = np.shape(Array)
+#     Out      = m8r.Output(Dir+os.sep+Name)
+#     Mask_Out = m8r.Output(Dir+os.sep+'Mask_'+Name)
+#     # array gets transposed in rsf
+#     axis = [{'n':n3,'d':Tsample,'o':0,'l':'Time','u':'s'},
+#             {'n':n2,'d':Rspacing,'o':0,'l':'Offset','u':'m'},
+#             {'n':n1,'d':1,'o':0,'l':'Shot','u':''}]
+#     for i in range(len(axis)):
+#         Out.putaxis(axis[i], i+1)
+#         Mask_Out.putaxis(axis[i], i+1)
+#     Out.write(Array.data)
+#     Mask_Out.write(Array.mask)
+    # return
+def WriteRsf(Array, Dir, Name, *axis):
     '''Writes numpy array and its mask into optimised rsf file'''
-    n1,n2,n3 = np.shape(Array)
     Out      = m8r.Output(Dir+os.sep+Name)
-    Mask_Out = m8r.Output(Dir+os.sep+'Mask_'+Name)
-    # array gets transposed in rsf
-    axis = [{'n':n3,'d':Tsample,'o':0,'l':'Time','u':'s'},
-            {'n':n2,'d':Rspacing,'o':0,'l':'Offset','u':'m'},
-            {'n':n1,'d':1,'o':0,'l':'Shot','u':''}]
+    Out.type = 'int'
+    #Mask_Out = m8r.Output(Dir+os.sep+'Mask_'+Name)
+    dim = np.shape(Array)[::-1] #Rsf transposed compared to numpy
     for i in range(len(axis)):
+        axis[i]['n']=dim[i]
         Out.putaxis(axis[i], i+1)
-        Mask_Out.putaxis(axis[i], i+1)
-    Out.write(Array.data)
-    Mask_Out.write(Array.mask)
+        #Mask_Out.putaxis(axis[i], i+1)
+    Out.write(Array)#.data
+    #Mask_Out.write(Array.mask)
     return
+
 
 def MakeData(L, H, CorrTr, Cube, TraceH, S, Nh, Receivers):
     n=0
@@ -233,7 +247,7 @@ def Calc_CMP2D(TraceH, CoX, CoY):
     for a in range(len(CMPs)):
         if np.isfinite(CMPs[a, 1]):
             Pointer[a] = closest_node(CMPs[a,1:], Spline)
-    Pointer = np.ma.masked_where(Pointer<0, Pointer)
+    #Pointer = np.ma.masked_where(Pointer<0, Pointer)
     BinP, fold = np.unique(Pointer, return_counts=True)
     return Xr, Yr, Zr, CMPs, Spline, Pointer, BinP, fold[:-1]
 
@@ -351,9 +365,16 @@ Offsets = np.zeros(len(Pointer)) #copy for keeping mask
 for i in range(len(Pointer)):
         #o,r = i/Receivers//1, i%Receivers #pointing inside Offset cube headers
         Offsets[i] = 2*(([Xr[i], Yr[i], Zr[i]]-Spline[Pointer[i]])**2).sum()**.5//25
-plt.scatter(Pointer, Offsets, marker='+')
-plt.show()
-##L_CMP, Pos_CMP =[], []
+
+####EXPORT HEADER TO RSF####
+New_Head= np.zeros((3,len(Offsets)), dtype=np.int)
+New_Head[0]=H[0][:,0].astype(np.int)
+New_Head[1]=Offsets.astype(np.int)
+New_Head[2]=Pointer.astype(np.int)
+np.savetxt('New_Head.dat',New_Head, delimiter=',')
+axis = [{'d':'','o':'','l':'','u':''},
+       {'d':'','o':'','l':'Traces','u':''}]
+#WriteRsf(New_Head.transpose(), Dir, 'New_Head.rsf', *axis) #Cube in Shot Time Offset needs ordering before export##L_CMP, Pos_CMP =[], []
 ##for i in range(len(BinP)-1):
 ##    a = np.where(Pointer == BinP[i])
 ##    oo,rr = a/Receivers//1, a%Receivers
