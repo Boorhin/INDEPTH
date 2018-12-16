@@ -11,9 +11,7 @@ def grey(title):
     title="%s"
     ''' % title
 def dip(slow2):
-    return '''
-    math output="(%g*x2/x1)" | mutter half=n v0=1.4 tp=0.4
-    ''' % (slow2*d2/d1)
+    return '''math output="(%g*x2/x1)" | mutter half=n v0=1400 tp=0.4''' % (slow2*d2/d1)
 d1=0.004
 d2=25 #CdP space
 ####DATA LOADING
@@ -118,13 +116,25 @@ Flow('RSF/Filt_line', All, 'rcat ${SOURCES[1:-1]} axis=2')
 Flow('RSF/Masked_line', ['RSF/Filt_line', 'Utils/Maskheader'], 'headerwindow mask=${SOURCES[1]}')
 Flow('RSF/CDPs','RSF/Masked_line', 'sfintbin axis=n2 xk=cdpx yk=cdpy mask="Utils/CDPs_mask.rsf" map="Utils/CDPs_map.rsf"')
 # Flow('RSF/Brute_Stack', 'RSF/CDPs', 'stack axis=2')
-V1= 2.
-V2= 9.
+V1= 1500.
+V2= 9000.
 
-for i in range(80,81):
+for i in range(80,100):
 #1387+80):
     cdp = 'CDP/cdp_%s'%i
     cdp_mask = 'CDP_Mask/cdp_Mask_%s'%i
+    Sembl = 'Sembl/Sembl_%s'%i
+    vpick = 'Vpick/Vpick_%s'%i
+    vdip = 'Vdip/Vdip_%s'%i
+    vseis = 'Vseis/Vseis_%s'%i
+    Freq= 'Freq/Freq%s'%i
+    Fmask = 'FMask/FMask_%s'%i
+    Fmask2='FMask2/FMask2_%s'%i
+    CdP2 = 'Cdp2/Cdp2_%s'%i
+    Exp = 'Exp/Exp_%s_'%i
+    CdP_Ndip = 'CdP_Ndip/CdP_Ndip_%s'%i
+    CdP_Sdip = 'CdP_Sdip/CdP_Sdip_%s'%i
+    Cl_cdp = 'Cl_cdp/Cl_cdp_%s'%i
     Dip0 = 'Dip0/Dip0_%s'%i
     Dip1 = 'Dip1/Dip1_%s'%i
     Dip2 = 'Dip2/Dip2_%s'%i
@@ -141,14 +151,32 @@ for i in range(80,81):
     mig = 'MigS/MigS_%s'%i
     Flow(cdp_mask, 'Utils/CDPs_mask.rsf','window f2=%s n2=1'%i)
     # add mute and median filter
-    Flow(cdp, ['RSF/CDPs', cdp_mask], 'window f2=%s n2=1 | headerwindow mask=${SOURCES[1]} | pow pow1=2'%i)
+    Flow(cdp, ['RSF/CDPs', cdp_mask], 'window f2=%s n2=1 | sfput d2=25 label2="Offset"| headerwindow mask=${SOURCES[1]} | bandpass flo=20 | despike2 wide1=7 wide2=7 | pow pow1=2'%i)
+    # Flow(FMask, cdp, 'math output="input*input" | mask min=0.01')
+    # Flow(Fmask2,Fmask,'dd type=float')
+    # Flow(CdP2, [Fmask2, cdp], 'add mode=p ${SOURCES[1]}')
+    # Flow(Freq, CdP2, 'twofreq2')
+    # for case in range(2):
+    #     eps=(0.1,5)[case]
+    #     Flow(Exp+str(case), [CdP2, Freq])
+    # Flow(CdP_Sdip, [Exp+str(1), Fmask], 'window n3=1 | dip verb=y order=2 rect1=10 rect2=10 mask=${SOURCES[1]}'))
+    # Flow(CdP_Ndip, [Exp+str(2), Fmask], 'window n3=1 | dip verb=y order=2 rect1=10 rect2=10 mask=${SOURCES[1]}'))
+    # Flow('sn',[CdP2, CdP_Ndip, CdP_Sdip, Freq],'explanesignoi niter=2000 verb=y ndip=${SOURCES[1]} sdip=${SOURCES[2]} freq=${SOURCES[3]} eps=0.01')
+    Flow(Sembl, cdp, 'vscan semblance=y v0=%d dv=25 nv=250 half=y'%V1)
+    Result(Sembl,'grey | sfenvelop | sfgrey color=j scalebar=y')
+    Flow(vpick, Sembl, 'scale axis=2 | pick rect1=40 | window')
+    Flow(vdip,vpick,'v2d n=128 d=20 o=0 mute=y half=y v0=10000 t0=0.004 tp=0.1')
+    #Flow(vseis,[cdp, vdip], 'seislet dip=${SOURCES[1]} type=b eps=0.01 adj=y inv=y unit=y')
+
+    #Flow(Cl_cdp,[vseis, vdip],'threshold pclip=5 | seislet dip=${SOURCES[1]} type=b eps=0.01 adj=n inv=y unit=y  | mutter v0=4500 x0=0 abs=n')
     Flow(Dip0,cdp,dip(1./V1-1./V2))
     Flow(Dip1,cdp,dip(1./V2))
     Flow(Dip2,[cdp, Dip0, Dip1],'nmostretch half=y v0=%s | twodip2 dip1=${SOURCES[1]} q0=0 order=3 niter=10 eps=200 lam=40 | window n3=1 | math ref=${SOURCES[2]} output="input+ref" '%V1)
     Flow(Dip3, [cdp,Dip2], 'dip idip=${SOURCES[1]} order=3 niter=10 liter=100 rect=50 rect2=20 pmin=0')
     Flow([Pnmo,Vel], [cdp, Dip3], 'pnmo dip=${SOURCES[1]} vel=${TARGETS[1]}')
-    Flow(Dip05,Dip3,'window min2=0.5')
-    Flow(Vtr,[cdp, Dip05],'window min2=0.5 | pveltran v0=1.5 dv=0.01 nv=151 dip=${SOURCES[1]}')
+    Result(Pnmo, 'grey | sfenvelop | sfgrey color=i scalebar=y')
+    Flow(Dip05,Dip3,'window min2=500 | despike2 wide1=7 wide2=7')
+    Flow(Vtr,[cdp, Dip05],'window min2=500 | pveltran v0=%d dv=10 nv=800 dip=${SOURCES[1]}'%V1)
     Flow(Vtk,Vtr, 'envelope | scale axis=2 | pick rect1=20 |  window min1=1.2 | remap1 pattern=$SOURCE order=2')
     #Flow(Dips0, Dip3, 'spray axis=3 n=250 d=0.0335 o=7.705')
     #Flow(Dips, [cdp, Dips0], 'dip idip=${SOURCES[1]} rect1=25 rect2=10 rect3=25')
