@@ -223,7 +223,7 @@ def Calc_CMP2D(TraceH, CoX, CoY):
         CMPs[o,0], CMPs[o,1], CMPs[o,2], CMPs[o,3] = Tr[o], (Xr[o]+XS[o])/2, (Yr[o]+YS[o])/2, (Zr[o]+ZS[o])/2
     CMPm = CMPs[::Receivers/2]
     ### Prepare spline:
-    xyz = np.unique(np.ma.compress_rowcols(np.ma.masked_invalid(CMPm[:,1:]), axis = 0), axis=0)
+    xyz = np.unique(CMPm[:,1:], axis=0)
     xyz = xyz[xyz[:,1].argsort()] #sorting to compensate for weird sorting from np.unique
     ### calculate spline to make binning notice subsampling and intense smoothing
     X_Spline, Y_Spline, Z_Spline, Spl_X, Spl_Y, Spl_Z = Interpolate(xyz[:,0][::6], xyz[:,1][::6], xyz[:,2][::6], Bin=25, deg=3, S=3000)
@@ -306,7 +306,6 @@ CorrTr=[0]
 Tr = sum(TT+CorrTr)
 Geom =(Tr/Receivers,S, Receivers) ## assuming first shot is correct
 TraceH, Cube  = np.zeros((Geom[0], Nh, Receivers)), np.zeros(Geom)
-CMPs = np.zeros((Tr,4)) # shot, X, Y ,Z
 
 ### Make Data Files
 #Cube, TraceH = MakeData(L, H, CorrTr, Cube, TraceH, S, Nh, Receivers)
@@ -316,23 +315,23 @@ CMPs = np.zeros((Tr,4)) # shot, X, Y ,Z
 
 ######Creating a mask for the Cube
 ## dead shots checked 2 times for possible info (time shift and not scaled values)
-DeadShots = [0, 3, 4, 24, 25, 37, 38, 47, 48, 52, 53, 74, 75, 87, 106, 108, 111, 112,120, 121, 137, 153, 154, 171, 186, 202, 203, 220, 235, 238, 297, 298, 309, 310, 316, 317, 335, 336, 349, 350, 355, 374, 375, 396, 397, 419, 420, 431, 432]
-ManDeadTr = np.array([[20,39],[20,43],[21,41],[21,110],[23,35],[28,10],[70,48],[81,8],[159,67],[175,26],[187,115],[187,116],[188,111],[188,112],[201,38],[284,55],[285,51],[435,112],[435,116],[435,119],[436,44],[437,108],[437,115],[438,111],[443,55],[443,91],[444,51]])
-WeirdShots=[36,88,138,170,201,234,325, 337,338,427, 436]
-
-### Mask for dead shots
-MASK = np.zeros(Geom, bool)
-MASK[DeadShots] = True
-MASK[WeirdShots]=True
-
-### Mask for deadTrace
-DeadTr = NullTrace(Cube, Receivers)
-MASK[DeadTr[:,0],:,DeadTr[:,1]]=True
-MASK[ManDeadTr[:,0],:,ManDeadTr[:,1]]=True
-
-## Masking
-Cube   = np.ma.MaskedArray(Cube, MASK)
-TraceH = np.ma.MaskedArray(TraceH, MASK[:,:len(TraceH[0]),:])
+# DeadShots = [0, 3, 4, 24, 25, 37, 38, 47, 48, 52, 53, 74, 75, 87, 106, 108, 111, 112,120, 121, 137, 153, 154, 171, 186, 202, 203, 220, 235, 238, 297, 298, 309, 310, 316, 317, 335, 336, 349, 350, 355, 374, 375, 396, 397, 419, 420, 431, 432]
+# ManDeadTr = np.array([[20,39],[20,43],[21,41],[21,110],[23,35],[28,10],[70,48],[81,8],[159,67],[175,26],[187,115],[187,116],[188,111],[188,112],[201,38],[284,55],[285,51],[435,112],[435,116],[435,119],[436,44],[437,108],[437,115],[438,111],[443,55],[443,91],[444,51]])
+# WeirdShots=[36,88,138,170,201,234,325, 337,338,427, 436]
+#
+# ### Mask for dead shots
+# MASK = np.zeros(Geom, bool)
+# MASK[DeadShots] = True
+# MASK[WeirdShots]=True
+#
+# ### Mask for deadTrace
+# DeadTr = NullTrace(Cube, Receivers)
+# MASK[DeadTr[:,0],:,DeadTr[:,1]]=True
+# MASK[ManDeadTr[:,0],:,ManDeadTr[:,1]]=True
+#
+# ## Masking
+# Cube   = np.ma.MaskedArray(Cube, MASK)
+# TraceH = np.ma.MaskedArray(TraceH, MASK[:,:len(TraceH[0]),:])
 
 #Export to rsf
 #WriteRsf(Cube.transpose(0,2,1), Dir, 'Cube_test', Tsample=0.004, Rspacing=50) #Cube in Shot Time Offset needs ordering before export
@@ -341,7 +340,8 @@ TraceH = np.ma.MaskedArray(TraceH, MASK[:,:len(TraceH[0]),:])
 
 #### Source and Receiver positions in real space, get CMPs etc
 CoX, CoY = 700000, 3000000  #Coordinate modifier
-Xr, Yr, Zr, CMPs, Spline, Pointer, BinP, fold = Calc_CMP(TraceH, CoX, CoY)
+TraceH=H[0].astype(np.float)
+Xr, Yr, Zr, CMPs, Spline, Pointer, BinP, fold = Calc_CMP2D(TraceH, CoX, CoY)
 
 #### Create CMP Gathers
 Low_bound, High_bound = BinP[0], BinP[-2]
@@ -349,10 +349,10 @@ MaxMoveOut = 250 #samples, traces will need padding to compensate for moveout
 Offsets = np.zeros(len(Pointer)) #copy for keeping mask
 #Diff = Pointer[:]
 for i in range(len(Pointer)):
-    if Pointer[i]:
-        o,r = i/Receivers//1, i%Receivers #pointing inside Offset cube headers
-        Offsets[i] = 2*(([Xr[o,r], Yr[o,r], Zr[o,r]]-Spline[Pointer[i]])**2).sum()**.5
-
+        #o,r = i/Receivers//1, i%Receivers #pointing inside Offset cube headers
+        Offsets[i] = 2*(([Xr[i], Yr[i], Zr[i]]-Spline[Pointer[i]])**2).sum()**.5//25
+plt.scatter(Pointer, Offsets, marker='+')
+plt.show()
 ##L_CMP, Pos_CMP =[], []
 ##for i in range(len(BinP)-1):
 ##    a = np.where(Pointer == BinP[i])

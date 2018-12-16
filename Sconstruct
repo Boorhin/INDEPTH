@@ -104,7 +104,7 @@ for i in range(456):
         Flow(Headers, 'RSF/TIB01_T', 'window f2=120*%s n2=120'%i)
         Flow(Offsets, Headers, 'headermath output="offset" | window')
         Flow(Statics, Headers,'headermath output="((-1*(%s-selev)/scalel)+(gelev-selev)/scalel)/%s"' %(MaxAlt,Vo))
-        Flow(sign3,[sign2,lowf,Statics, Offsets],'add scale=1,-1 ${SOURCES[1]} | stretch rule=d datum=${SOURCES[2]} | mutter offset=${SOURCES[3]} V0=2000 | despike2 wide1=5 wide2=3')
+        Flow(sign3,[sign2,lowf,Statics, Offsets],'add scale=1,-1 ${SOURCES[1]} | stretch rule=d datum=${SOURCES[2]} | mutter offset=${SOURCES[3]} V0=2000 | despike2 wide1=3 wide2=5')
         Flow(noiz3,[noiz2,lowf],'add ${SOURCES[1]}')
 
         #Plot(PShot, Shot, 'window max1=10 | grey title=%s gpow=1'%Shot)
@@ -117,7 +117,7 @@ Flow('RSF/Masked_line', ['RSF/Filt_line', 'Utils/Maskheader'], 'headerwindow mas
 Flow('RSF/CDPs','RSF/Masked_line', 'sfintbin axis=n2 xk=cdpx yk=cdpy mask="Utils/CDPs_mask.rsf" map="Utils/CDPs_map.rsf"')
 # Flow('RSF/Brute_Stack', 'RSF/CDPs', 'stack axis=2')
 V1= 1500.
-V2= 9000.
+V2= 10000.
 
 for i in range(80,1652, 500):
 #1387+80):
@@ -151,7 +151,8 @@ for i in range(80,1652, 500):
     mig = 'MigS/MigS_%s'%i
     Flow(cdp_mask, 'Utils/CDPs_mask.rsf','window f2=%s n2=1'%i)
     # add mute and median filter
-    Flow(cdp, ['RSF/CDPs', cdp_mask], 'window f2=%s n2=1 | sfput d2=25 label2="Offset"| headerwindow mask=${SOURCES[1]} | bandpass flo=20 | despike2 wide1=7 wide2=7 | pow pow1=2'%i)
+    Flow(cdp, ['RSF/CDPs', cdp_mask], 'window f2=%s n2=1 | sfput d2=25 label2="Offset"| headerwindow mask=${SOURCES[1]} | bandpass flo=10 | pow pow1=2'%i)
+    Result(cdp,  'sfgrey')
     # Flow(FMask, cdp, 'math output="input*input" | mask min=0.01')
     # Flow(Fmask2,Fmask,'dd type=float')
     # Flow(CdP2, [Fmask2, cdp], 'add mode=p ${SOURCES[1]}')
@@ -162,8 +163,8 @@ for i in range(80,1652, 500):
     # Flow(CdP_Sdip, [Exp+str(1), Fmask], 'window n3=1 | dip verb=y order=2 rect1=10 rect2=10 mask=${SOURCES[1]}'))
     # Flow(CdP_Ndip, [Exp+str(2), Fmask], 'window n3=1 | dip verb=y order=2 rect1=10 rect2=10 mask=${SOURCES[1]}'))
     # Flow('sn',[CdP2, CdP_Ndip, CdP_Sdip, Freq],'explanesignoi niter=2000 verb=y ndip=${SOURCES[1]} sdip=${SOURCES[2]} freq=${SOURCES[3]} eps=0.01')
-    Flow(Sembl, cdp, 'vscan semblance=y v0=%d dv=25 nv=250 half=y'%V1)
-    Result(Sembl,'envelope | grey color=j scalebar=y')
+    Flow(Sembl, cdp, 'vscan semblance=y v0=%d dv=20 nv=400 half=y'%V1)
+    Result(Sembl, Sembl,'envelope | grey color=a scalebar=y')
     Flow(vpick, Sembl, 'scale axis=2 | pick rect1=40 | window')
     Flow(vdip,vpick,'v2d n=128 d=20 o=0 mute=y half=y v0=10000 t0=0.004 tp=0.1')
     #Flow(vseis,[cdp, vdip], 'seislet dip=${SOURCES[1]} type=b eps=0.01 adj=y inv=y unit=y')
@@ -174,7 +175,7 @@ for i in range(80,1652, 500):
     Flow(Dip2,[cdp, Dip0, Dip1],'nmostretch half=y v0=%s | twodip2 dip1=${SOURCES[1]} q0=0 order=3 niter=10 eps=200 lam=40 | window n3=1 | math ref=${SOURCES[2]} output="input+ref" '%V1)
     Flow(Dip3, [cdp,Dip2], 'dip idip=${SOURCES[1]} order=3 niter=10 liter=100 rect=50 rect2=20 pmin=0')
     Flow([Pnmo,Vel], [cdp, Dip3], 'pnmo dip=${SOURCES[1]} vel=${TARGETS[1]}')
-    Result(Pnmo, 'grey | envelope | sfgrey color=i scalebar=y')
+    Result(Pnmo, Pnmo, 'envelope | sfgrey color=i scalebar=y')
     Flow(Dip05,Dip3,'window min2=500 | despike2 wide1=7 wide2=7')
     Flow(Vtr,[cdp, Dip05],'window min2=500 | pveltran v0=%d dv=10 nv=800 dip=${SOURCES[1]}'%V1)
     Flow(Vtk,Vtr, 'envelope | scale axis=2 | pick rect1=20 |  window min1=1.2 | remap1 pattern=$SOURCE order=2')
@@ -183,25 +184,17 @@ for i in range(80,1652, 500):
     #Flow(hdip, Dips, 'window n4=1')
     #Flow(xdip, Dips, 'window f4=1')
     #Flow(mig, [cdp, hdip, xdip], 'pmig hdip=${SOURCES[1]} xdip=${SOURCES[2]}' )
-#     #scroll through cdpy
+
 # #'| window  n1=1500 f2=80 n2=1387 f3=15 n3=1382 squeeze=n')
-# #Flow('RSF/Lines','RSF/Masked_line Utils/OffCdp', 'bin head=${SOURCES[1]mask="Utils/Cube_mask.rsf" map="Utils/Cube_map.rsf"} xmin=0 xmax=3000 dx=25 dy=1')
 
-#Flow(['RSF/CDPs','Utils/Fold'], ['RSF/Masked_line.rsf', 'Utils/XYr'], 'bin dx=25 dy=1 interp=1 fold=${TARGETS[1]} head=${SOURCES[1]} xkey=0 ykey=1 ny=1 nx=500')
 
-# Flow('RSF/CDP0s',['RSF/Masked_line.rsf', 'RSF/TIB01_T'], 'sfintbin axis=n2 xk=iline yk=cdp')
-
-### will need to transform in half offsets
-# Flow(['RSF/CDP2s','Utils/Fold'],['RSF/Masked_line.rsf', 'Utils/OffCdp'], 'bin nx=240 dx=50 x0=-6000 ny=3304 dx=1 x0=437 fold=${TARGETS[1]} head=${SOURCES[1]} xkey=0 ykey=1')
-#
 #Result('PCDP', 'CDPs', 'grey3 pclip=99.9 title="CDPs" flat=y movie=3')
 
 
 #########TODO#####
  ###statics###
-#Vo=?
-#Flow(’statics’,’TIB01_T’,’headermath output="(gelev-selev)*%d/scalel" | math output="input" ’%Vo)
-#Flow(’line_statics’,’line? statics’,’stretch rule=d datum=${SOURCES[1]}’)
-###end_statics###
+#Vo=in header
+#Make a true CMP cube with python headers!
+
 
 End()
