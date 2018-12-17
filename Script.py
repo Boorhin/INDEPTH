@@ -227,7 +227,7 @@ def Calc_CMP(TraceH, CoX, CoY):
     ##plt.show()
     return Xr, Yr, Zr, CMPs, Spline, Pointer, BinP, fold[:-1]
 
-def Calc_CMP2D(TraceH, CoX, CoY):
+def Calc_CMP2D(TraceH, CoX, CoY, CdP_Bin):
     '''make CMPs arrays tr X, Y, Z
     Construct a pointer between shortest binned curve and each CMP, extract fold'''
     Tr=TraceH[:,0]
@@ -244,7 +244,7 @@ def Calc_CMP2D(TraceH, CoX, CoY):
     xyz = np.unique(CMPm[:,1:], axis=0)
     xyz = xyz[xyz[:,1].argsort()] #sorting to compensate for weird sorting from np.unique
     ### calculate spline to make binning notice subsampling and intense smoothing
-    X_Spline, Y_Spline, Z_Spline, Spl_X, Spl_Y, Spl_Z = Interpolate(xyz[:,0][::6], xyz[:,1][::6], xyz[:,2][::6], Bin=25, deg=3, S=3000)
+    X_Spline, Y_Spline, Z_Spline, Spl_X, Spl_Y, Spl_Z = Interpolate(xyz[:,0][::6], xyz[:,1][::6], xyz[:,2][::6], Bin=CdP_Bin, deg=3, S=3000)
     Pointer = np.ones(len(CMPs), dtype=np.int)*-1 # contains index of nearest Spline node
     Spline= np.zeros((len(Spl_X),3))
     Spline[:,0], Spline[:,1], Spline[:,2] = Spl_X, Spl_Y, Spl_Z
@@ -292,6 +292,12 @@ def RemoveGroundRoll(Sh_Rec, V0=30, padding=1000):
     noiz3  = m8r.add(scale='1, 1')[noiz2,lowf] #assuming sfadd without instruction is just an addition...
     return
 
+def Fill_Slice((Data_Slice, Meshx, Meshy, x, y, t)):
+    '''Interpolate discrete values at constant t
+    To regularize the data'''
+    Slice=SC.griddata((x,y),Data_Slice, (Meshx, Meshy), method='linear', fill_value=0)
+    np.savetxt(Dir+os.sep+'CdP_Slice_'+str(t)+'.dat', Slice, delimiter=',')
+    return
 ##def get_trace(ShotPoint, Trace):
 ##    Data, TrHead = getData (Dir, File, Header)
 ##    extract trace and headers
@@ -355,27 +361,22 @@ TraceH, Cube  = np.zeros((Geom[0], Nh, Receivers)), np.zeros(Geom)
 #### Source and Receiver positions in real space, get CMPs etc
 CoX, CoY = 700000, 3000000  #Coordinate modifier
 TraceH=H[0].astype(np.float)
-Xr, Yr, Zr, CMPs, Spline, Pointer, BinP, fold = Calc_CMP2D(TraceH, CoX, CoY)
+Xr, Yr, Zr, CMPs, Spline, Pointer, BinP, fold = Calc_CMP2D(TraceH, CoX, CoY, CdP_Bin=100)
 
 ########### Create CMP Gather Geometry ###########
 Offsets = np.zeros(len(Pointer), dtype=np.int)
 for i in range(len(Pointer)):
         #o,r = i/Receivers//1, i%Receivers #pointing inside Offset cube headers
-        Offsets[i] =np.around((([Xr[i], Yr[i], Zr[i]]-Spline[Pointer[i]])**2).sum()**.5/25, decimals=0)
+        Offsets[i] =np.around((([Xr[i], Yr[i], Zr[i]]-Spline[Pointer[i]])**2).sum()**.5/50, decimals=0)
 
 ########EXPORT HEADER TO ASCII########
-New_Head= np.zeros((3,len(Offsets)), dtype=np.int)
-New_Head[0]=H[0][:,0]
-New_Head[1]=Offsets
-New_Head[2]=Pointer
-np.savetxt('New_Head.dat',New_Head, delimiter=',')
+# New_Head= np.zeros((3,len(Offsets)), dtype=np.int)
+# New_Head[0]=H[0][:,0]
+# New_Head[1]=Offsets
+# New_Head[2]=Pointer
+# np.savetxt('New_Head.dat',New_Head, delimiter=',')
 
-def Fill_Slice((Data_Slice, Meshx, Meshy, x, y, t)):
-    '''Interpolate discrete values at constant t
-    To regularize the data'''
-    Slice=SC.griddata((x,y),Data_Slice, (Meshx, Meshy), method='linear', fill_value=0)
-    np.savetxt(Dir+os.sep+'CdP_Slice_'+str(t)+'.dat', Slice, delimiter=',')
-    return
+
 
 ########Interpolate Missing Data ##########
 Low_bound, High_bound = BinP[0], BinP[-1]+1
@@ -391,16 +392,44 @@ x = [Offsets[i] for i in range(len(Pointer))]
 y = [Pointer[i] for i in range(len(Pointer))]
 Filtered_line= LoadRsf (Dir,'Masked_line.rsf')
 ns=len(Filtered_line[0])
-if __name__ == '__main__':
-    pool = Pool()
-    pool.map(Fill_Slice, [(Filtered_line[:,t], Meshx, Meshy, x, y, t) for t in range(ns)])
-pool.close()
-pool.join()
+# if __name__ == '__main__':
+#     pool = Pool()
+#     pool.map(Fill_Slice, [(Filtered_line[:,t], Meshx, Meshy, x, y, t) for t in range(ns)])
+# pool.close()
+# pool.join()
+Stacks =[]
+Cube = np.zeros(shape=(6250, len(xi), len(yi)))
+masker = np.zeros(shape=(len(xi), len(yi)))
+for i in range(len(Filtered_line)):
+    if Cube[100,Offsets[i], Pointer[i]-Low_bound] != 0:
+        Stacks.append((Offsets[i], Pointer[i]-Low_bound))
+    masker[Offsets[i], Pointer[i]-Low_bound] += 1
+    Cube[:,Offsets[i], Pointer[i]-Low_bound] += Filtered_line[i]
 
-
-
-
-
+###### normalise amplitude where Stacks ########
+####### of 2 traces in the same bin   ##########
+Stacks.sort(key= lambda x: x[0])
+n= 0
+while n < len(Stacks):
+    S = 2
+    m=n
+    while Stacks[m] == Stacks[n]:
+        S +=1
+        m +=1
+        if m>len(Stacks):
+            break
+    Cube[:,Stacks[n][0], Stacks[n][1]] /= S
+    n += S-1
+####### interpolate traces? #####
+X, Y = np.where(masker>0)
+#Test
+Z = Cube[2000, X, Y]
+Slice=SC.griddata((X,Y+Low_bound),Z, (Meshx, Meshy), method='cubic', fill_value=0)
+fig, ax = plt.subplots(3,1)
+ax[0].imshow(masker, vmax=1, aspect='auto', cmap='gray')
+ax[1].imshow(Cube[2000,:,:], vmin=-0.5, vmax=0.5, aspect='auto')
+ax[2].imshow(Slice.T, vmin=-0.5, vmax=0.5, aspect='auto')
+plt.show()
 
 
 
