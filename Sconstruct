@@ -119,6 +119,15 @@ Flow(Masked_Line, ['RSF/Filt_line', 'Utils/Maskheader'], 'headerwindow mask=${SO
 Flow('New_Head', 'New_Head.dat', 'csv2rsf delimiter="," dtype=int| transp')
 Flow('RSF/CdP2',[Masked_Line, 'New_Head'], 'sfintbin axis=n2 head=${SOURCES[1]} xkey=1 ykey=2 mask="Utils/CDP2_mask.rsf" map="Utils/CDP2_map.rsf"| sfput d3=25 d2=25 label3="CDP" label2="Offset" unit2="m" unit3="m"')
 Flow('RSF/Brute_Stack', 'RSF/CdP2', 'stack axis=2')
+####Interpolate missing traces in CdP-Offset space
+Flow('Miss/Reduced_Mask', 'Utils/CDP2_mask.rsf', 'dd type=float')
+Flow('Miss/Maskin', 'Miss/Reduced_Mask', 'spray axis=1 n=6500 d=0.004')
+#Why 130???
+Flow('Miss/rCdP', 'RSF/CdP2', 'reverse which=2 | window f2=130 | cat axis=2 ${SOURCES[0]}')
+Flow('Miss/rMask', 'Miss/Maskin','reverse which=2 | window f2=130 | cat axis=2 ${SOURCES[0]}')
+Flow(['Miss/apef', 'Miss/Maskout'], ['Miss/rCdP','Miss/rMask'], 'apef maskin=${SOURCES[1]} maskout=${TARGETS[1]} jump=1 a=4,2,2 niter=500 rect1=50 rect2=10 rect3=10 verb=y')
+Flow('Miss/Amiss', ['Miss/rCdP', 'Miss/apef','Miss/rMask'], 'miss43 filt=${SOURCES[1]} mask=${SOURCES[2]} niter=1000 verb=y | window f2=50')
+
 V1= 1500.
 V2= 10000.
 
@@ -154,7 +163,7 @@ for i in range(336,3804, 500):
     mig = 'MigS/MigS_%s'%i
     #Flow(cdp_mask, 'Utils/CDPs_mask.rsf','window f2=%s n2=1'%i)
     # add mute and median filter
-    Flow(cdp, 'RSF/CdP2', 'window f2=%s n2=1 | bandpass flo=10 | pow pow1=2'%i)
+    Flow(cdp, 'RSF/CdP2', 'window f3=%s n3=1 | bandpass flo=10 | pow pow1=2'%i)
     Result(cdp,  'grey')
     # Flow(FMask, cdp, 'math output="input*input" | mask min=0.01')
     # Flow(Fmask2,Fmask,'dd type=float')
@@ -166,16 +175,17 @@ for i in range(336,3804, 500):
     # Flow(CdP_Sdip, [Exp+str(1), Fmask], 'window n3=1 | dip verb=y order=2 rect1=10 rect2=10 mask=${SOURCES[1]}'))
     # Flow(CdP_Ndip, [Exp+str(2), Fmask], 'window n3=1 | dip verb=y order=2 rect1=10 rect2=10 mask=${SOURCES[1]}'))
     # Flow('sn',[CdP2, CdP_Ndip, CdP_Sdip, Freq],'explanesignoi niter=2000 verb=y ndip=${SOURCES[1]} sdip=${SOURCES[2]} freq=${SOURCES[3]} eps=0.01')
-    Flow(Sembl, cdp, 'vscan semblance=y v0=%d dv=20 nv=400 half=y'%V1)
-    Result(Sembl, Sembl,'envelope | grey color=a scalebar=y')
+    Flow(Sembl, cdp, 'vscan semblance=y v0=%d dv=20 nv=400 half=n'%V1)
+    Result(Sembl, Sembl,'envelope | grey color=j scalebar=y')
     Flow(vpick, Sembl, 'scale axis=2 | pick rect1=40 | window')
-    Flow(vdip,vpick,'v2d n=128 d=20 o=0 mute=y half=y v0=10000 t0=0.004 tp=0.1')
+    Result(vpick,vpick, 'sfgraph')
+    Flow(vdip,vpick,'v2d n=128 d=20 o=0 mute=y half=n v0=10000 t0=0.004 tp=0.1')
     #Flow(vseis,[cdp, vdip], 'seislet dip=${SOURCES[1]} type=b eps=0.01 adj=y inv=y unit=y')
 
     #Flow(Cl_cdp,[vseis, vdip],'threshold pclip=5 | seislet dip=${SOURCES[1]} type=b eps=0.01 adj=n inv=y unit=y  | mutter v0=4500 x0=0 abs=n')
     Flow(Dip0,cdp,dip(1./V1-1./V2))
     Flow(Dip1,cdp,dip(1./V2))
-    Flow(Dip2,[cdp, Dip0, Dip1],'nmostretch half=y v0=%s | twodip2 dip1=${SOURCES[1]} q0=0 order=3 niter=10 eps=200 lam=40 | window n3=1 | math ref=${SOURCES[2]} output="input+ref" '%V1)
+    Flow(Dip2,[cdp, Dip0, Dip1],'nmostretch half=n v0=%s | twodip2 dip1=${SOURCES[1]} q0=0 order=3 niter=10 eps=200 lam=40 | window n3=1 | math ref=${SOURCES[2]} output="input+ref" '%V1)
     Flow(Dip3, [cdp,Dip2], 'dip idip=${SOURCES[1]} order=3 niter=10 liter=100 rect=50 rect2=20 pmin=0')
     Flow([Pnmo,Vel], [cdp, Dip3], 'pnmo dip=${SOURCES[1]} vel=${TARGETS[1]}')
     Result(Pnmo, Pnmo, 'envelope | sfgrey color=i scalebar=y')
@@ -199,6 +209,9 @@ for i in range(336,3804, 500):
 #Vo=in header
 #Correct CMP for stacking traces in same bin...
 #Reuse horrible CDPx, CDPy?
+#Do the sorting in python and interpolate with RegularGridInterpolator
+#https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.RegularGridInterpolator.html#scipy.interpolate.RegularGridInterpolator
+#OR rather this https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.interpn.html#scipy.interpolate.interpn
 
 
 End()
