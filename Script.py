@@ -344,7 +344,7 @@ TraceH, Cube  = np.zeros((Geom[0], Nh, Receivers)), np.zeros(Geom)
 # ## Masking
 # Cube   = np.ma.MaskedArray(Cube, MASK)
 # TraceH = np.ma.MaskedArray(TraceH, MASK[:,:len(TraceH[0]),:])
-from multiprocessing import Pool
+
 ###############Export to rsf###############
 ###########################################
 # axis = [{'d':'','o':'','l':'','u':''},
@@ -394,7 +394,8 @@ ns=len(Filtered_line[0])
 if __name__ == '__main__':
     pool = Pool()
     pool.map(Fill_Slice, [(Filtered_line[:,t], Meshx, Meshy, x, y, t) for t in range(ns)])
-
+pool.close()
+pool.join()
 
 
 
