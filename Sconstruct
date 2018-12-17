@@ -117,16 +117,22 @@ Masked_Line = 'RSF/Masked_line'
 Flow(Masked_Line, ['RSF/Filt_line', 'Utils/Maskheader'], 'headerwindow mask=${SOURCES[1]}')
 # Flow('RSF/CDPs',Masked_Line, 'sfintbin axis=n2 xk=cdpx yk=cdpy mask="Utils/CDPs_mask.rsf" map="Utils/CDPs_map.rsf"')
 Flow('New_Head', 'New_Head.dat', 'csv2rsf delimiter="," dtype=int| transp')
-Flow('RSF/CdP2',[Masked_Line, 'New_Head'], 'sfintbin axis=n2 head=${SOURCES[1]} xkey=1 ykey=2 mask="Utils/CDP2_mask.rsf" map="Utils/CDP2_map.rsf"| sfput d3=25 d2=25 label3="CDP" label2="Offset" unit2="m" unit3="m"')
-Flow('RSF/Brute_Stack', 'RSF/CdP2', 'stack axis=2')
+CdPl = []
+for i in range(6500):
+    CdP_Slice = 'CdP_Slices/CdP_Slice_%s'%i
+    CdPl.append(CdP_Slice)
+    Flow(CdP_Slice, 'RSF/CdP_Slice_%i.dat'%i, 'csv2rsf delimiter=","')
+Flow('RSF/CdP3', CdPl, 'rcat${SOURCES[1:-1]} axis=3 | put d1=0.004 label1="Time" unit1="s" d2=25 label2="Offset" unit2="m" d3=25 label3="CdP" unit3="m" o3=')
+# Flow('RSF/CdP2',[Masked_Line, 'New_Head'], 'sfintbin axis=n2 head=${SOURCES[1]} xkey=1 ykey=2 mask="Utils/CDP2_mask.rsf" map="Utils/CDP2_map.rsf"| sfput d3=25 d2=25 label3="CDP" label2="Offset" unit2="m" unit3="m"')
+Flow('RSF/Brute_Stack', 'RSF/CdP3', 'stack axis=2')
 ####Interpolate missing traces in CdP-Offset space
-Flow('Miss/Reduced_Mask', 'Utils/CDP2_mask.rsf', 'dd type=float')
-Flow('Miss/Maskin', 'Miss/Reduced_Mask', 'spray axis=1 n=6500 d=0.004')
-#Why 130???
-Flow('Miss/rCdP', 'RSF/CdP2', 'reverse which=2 | window f2=130 | cat axis=2 ${SOURCES[0]}')
-Flow('Miss/rMask', 'Miss/Maskin','reverse which=2 | window f2=130 | cat axis=2 ${SOURCES[0]}')
-Flow(['Miss/apef', 'Miss/Maskout'], ['Miss/rCdP','Miss/rMask'], 'apef maskin=${SOURCES[1]} maskout=${TARGETS[1]} jump=1 a=4,2,2 niter=500 rect1=50 rect2=10 rect3=10 verb=y')
-Flow('Miss/Amiss', ['Miss/rCdP', 'Miss/apef','Miss/rMask'], 'miss43 filt=${SOURCES[1]} mask=${SOURCES[2]} niter=1000 verb=y | window f2=50')
+# Flow('Miss/Reduced_Mask', 'Utils/CDP2_mask.rsf', 'dd type=float')
+# Flow('Miss/Maskin', 'Miss/Reduced_Mask', 'spray axis=1 n=6500 d=0.004')
+# #Why 130???
+# Flow('Miss/rCdP', 'RSF/CdP2', 'reverse which=2 | window f2=130 | cat axis=2 ${SOURCES[0]}')
+# Flow('Miss/rMask', 'Miss/Maskin','reverse which=2 | window f2=130 | cat axis=2 ${SOURCES[0]}')
+# Flow(['Miss/apef', 'Miss/Maskout'], ['Miss/rCdP','Miss/rMask'], 'apef maskin=${SOURCES[1]} maskout=${TARGETS[1]} jump=1 a=4,2,2 niter=500 rect1=50 rect2=10 rect3=10 verb=y')
+# Flow('Miss/Amiss', ['Miss/rCdP', 'Miss/apef','Miss/rMask'], 'miss43 filt=${SOURCES[1]} mask=${SOURCES[2]} niter=1000 verb=y | window f2=50')
 
 V1= 1500.
 V2= 10000.
@@ -163,7 +169,7 @@ for i in range(336,3804, 500):
     mig = 'MigS/MigS_%s'%i
     #Flow(cdp_mask, 'Utils/CDPs_mask.rsf','window f2=%s n2=1'%i)
     # add mute and median filter
-    Flow(cdp, 'RSF/CdP2', 'window f3=%s n3=1 | bandpass flo=10 | pow pow1=2'%i)
+    Flow(cdp, 'RSF/CdP3', 'window f3=%s n3=1 | bandpass flo=10 | pow pow1=2'%i)
     Result(cdp,  'grey')
     # Flow(FMask, cdp, 'math output="input*input" | mask min=0.01')
     # Flow(Fmask2,Fmask,'dd type=float')

@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import butter, lfilter
 import scipy.interpolate as SC
+from multiprocessing import Pool
 
 def Interpolate(X, Y, Z, Bin, deg, S):
     ''' Interpolate a 3D spline according to distance between points'''
@@ -44,6 +45,10 @@ def getData (Dir, File, Header):
     TrHead= np.array(TrH)
     return Data, TrHead
 
+def LoadRsf (Dir, File):
+    F = m8r.Input(Dir+os.sep+File)
+    Data = np.array(F)
+    return Data
 # def WriteRsf(Array, Dir, Name, Tsample, Rspacing):
 #     '''Writes numpy array and its mask into optimised rsf file'''
 #     n1,n2,n3 = np.shape(Array)
@@ -72,7 +77,6 @@ def WriteRsf(Array, Dir, Name, *axis):
     Out.write(Array)#.data
     #Mask_Out.write(Array.mask)
     return
-
 
 def MakeData(L, H, CorrTr, Cube, TraceH, S, Nh, Receivers):
     n=0
@@ -293,25 +297,19 @@ def RemoveGroundRoll(Sh_Rec, V0=30, padding=1000):
 ##    extract trace and headers
 ##    return trace and header
 #### File management
-
+########## Data gathering ##########
 Dir ='/media/julien/NuDrive/Himalayas/dummy/SGY/INDEPTH/RSF'
 Files   =  ['TIB01.rsf']#,'TIB01_B.rsf','TIB01_C.rsf','TIB01_D.rsf','TIB01_E.rsf']
 Headers = Files[:]
-
-for a in range(len(Files)):
-    Files[a] = Files[a]
-    Headers[a] = Files[a][:-4]+'_T'+Files[a][-4:]
-
-#### Data gathering
 L, H, TT    = [], [], []
-
-for m in range(len(Files)):
-    DD, h = getData (Dir, Files[m], Headers[m])
+for a in range(len(Files)):
+    Headers[a] = Files[a][:-4]+'_T'+Files[a][-4:]
+    DD, h = getData (Dir, Files[a], Headers[a])
     L.append(DD)
     H.append(h)
     TT.append(h[-1,1])
 
-#### Data consolidation
+########## Data consolidation ########
 Receivers= H[0][0,-13]
 Nh = len(H[0][0])
 S = H[0][0,38]
@@ -321,13 +319,13 @@ Tr = sum(TT+CorrTr)
 Geom =(Tr/Receivers,S, Receivers) ## assuming first shot is correct
 TraceH, Cube  = np.zeros((Geom[0], Nh, Receivers)), np.zeros(Geom)
 
-### Make Data Files
+########### Make Data Files ###########
 #Cube, TraceH = MakeData(L, H, CorrTr, Cube, TraceH, S, Nh, Receivers)
 
-### save first QC plot
+########### save first QC plot ############
 #QCshots(Dir, Cube)
 
-######Creating a mask for the Cube
+######Creating a mask for the Cube #########
 ## dead shots checked 2 times for possible info (time shift and not scaled values)
 # DeadShots = [0, 3, 4, 24, 25, 37, 38, 47, 48, 52, 53, 74, 75, 87, 106, 108, 111, 112,120, 121, 137, 153, 154, 171, 186, 202, 203, 220, 235, 238, 297, 298, 309, 310, 316, 317, 335, 336, 349, 350, 355, 374, 375, 396, 397, 419, 420, 431, 432]
 # ManDeadTr = np.array([[20,39],[20,43],[21,41],[21,110],[23,35],[28,10],[70,48],[81,8],[159,67],[175,26],[187,115],[187,116],[188,111],[188,112],[201,38],[284,55],[285,51],[435,112],[435,116],[435,119],[436,44],[437,108],[437,115],[438,111],[443,55],[443,91],[444,51]])
@@ -346,41 +344,81 @@ TraceH, Cube  = np.zeros((Geom[0], Nh, Receivers)), np.zeros(Geom)
 # ## Masking
 # Cube   = np.ma.MaskedArray(Cube, MASK)
 # TraceH = np.ma.MaskedArray(TraceH, MASK[:,:len(TraceH[0]),:])
-
-#Export to rsf
+from multiprocessing import Pool
+###############Export to rsf###############
+###########################################
+# axis = [{'d':'','o':'','l':'','u':''},
+#        {'d':'','o':'','l':'Traces','u':''}]
 #WriteRsf(Cube.transpose(0,2,1), Dir, 'Cube_test', Tsample=0.004, Rspacing=50) #Cube in Shot Time Offset needs ordering before export
 #WriteRsf(TraceH.transpose(0,2,1), Dir, 'Trace_test.rsf', Tsample=1, Rspacing=1)
-
 
 #### Source and Receiver positions in real space, get CMPs etc
 CoX, CoY = 700000, 3000000  #Coordinate modifier
 TraceH=H[0].astype(np.float)
 Xr, Yr, Zr, CMPs, Spline, Pointer, BinP, fold = Calc_CMP2D(TraceH, CoX, CoY)
 
-#### Create CMP Gathers
-Low_bound, High_bound = BinP[0], BinP[-2]
-MaxMoveOut = 250 #samples, traces will need padding to compensate for moveout
-Offsets = np.zeros(len(Pointer)) #copy for keeping mask
-#Diff = Pointer[:]
+########### Create CMP Gather Geometry ###########
+Offsets = np.zeros(len(Pointer), dtype=np.int)
 for i in range(len(Pointer)):
         #o,r = i/Receivers//1, i%Receivers #pointing inside Offset cube headers
-        Offsets[i] = (([Xr[i], Yr[i], Zr[i]]-Spline[Pointer[i]])**2).sum()**.5//25
+        Offsets[i] =np.around((([Xr[i], Yr[i], Zr[i]]-Spline[Pointer[i]])**2).sum()**.5/25, decimals=0)
 
-####EXPORT HEADER TO RSF####
+########EXPORT HEADER TO ASCII########
 New_Head= np.zeros((3,len(Offsets)), dtype=np.int)
-New_Head[0]=H[0][:,0].astype(np.int)
-New_Head[1]=Offsets.astype(np.int)
-New_Head[2]=Pointer.astype(np.int)
+New_Head[0]=H[0][:,0]
+New_Head[1]=Offsets
+New_Head[2]=Pointer
 np.savetxt('New_Head.dat',New_Head, delimiter=',')
-axis = [{'d':'','o':'','l':'','u':''},
-       {'d':'','o':'','l':'Traces','u':''}]
-#WriteRsf(New_Head.transpose(), Dir, 'New_Head.rsf', *axis) #Cube in Shot Time Offset needs ordering before export##L_CMP, Pos_CMP =[], []
-##for i in range(len(BinP)-1):
-##    a = np.where(Pointer == BinP[i])
-##    oo,rr = a/Receivers//1, a%Receivers
-##    Pos_CMP.append([oo,rr])
-##    for j in range(len(a)):
-##        get_trace(Cube_filtered)
+
+def Fill_Slice((Data_Slice, Meshx, Meshy, x, y, t)):
+    '''Interpolate discrete values at constant t
+    To regularize the data'''
+    Slice=SC.griddata((x,y),Data_Slice, (Meshx, Meshy), method='linear', fill_value=0)
+    np.savetxt(Dir+os.sep+'CdP_Slice_'+str(t)+'.dat', Slice, delimiter=',')
+    return
+
+########Interpolate Missing Data ##########
+Low_bound, High_bound = BinP[0], BinP[-1]+1
+MinOff, MaxOff= int(Offsets.min()),int(Offsets.max()//1)+1
+#Mesh = np.meshgrid(np.zeros(6500), np.zeros(MaxOff-MinOff), np.zeros(BinP[-2]-BinP[0]))
+# Mask= np.zeros((MaxOff, High_bound[-1]))
+# for i in range(len(Pointer)):
+#     Mask[Offsets[i], Pointer[i]] +=1
+xi = np.arange(MinOff, MaxOff)
+yi = np.arange(Low_bound, High_bound)
+Meshx, Meshy = np.meshgrid(xi, yi)
+x = [Offsets[i] for i in range(len(Pointer))]
+y = [Pointer[i] for i in range(len(Pointer))]
+Filtered_line= LoadRsf (Dir,'Masked_line.rsf')
+ns=len(Filtered_line[0])
+if __name__ == '__main__':
+    pool = Pool()
+    pool.map(Fill_Slice, [(Filtered_line[:,t], Meshx, Meshy, x, y, t) for t in range(ns)])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ###### plot Offset vs CMP bin
