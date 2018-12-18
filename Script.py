@@ -391,12 +391,7 @@ Meshx, Meshy = np.meshgrid(xi, yi)
 x = [Offsets[i] for i in range(len(Pointer))]
 y = [Pointer[i] for i in range(len(Pointer))]
 Filtered_line= LoadRsf (Dir,'Masked_line.rsf')
-ns=len(Filtered_line[0])
-# if __name__ == '__main__':
-#     pool = Pool()
-#     pool.map(Fill_Slice, [(Filtered_line[:,t], Meshx, Meshy, x, y, t) for t in range(ns)])
-# pool.close()
-# pool.join()
+
 Stacks =[]
 Cube = np.zeros(shape=(6250, len(xi), len(yi)))
 masker = np.zeros(shape=(len(xi), len(yi)))
@@ -421,18 +416,33 @@ while n < len(Stacks):
     Cube[:,Stacks[n][0], Stacks[n][1]] /= S
     n += S-1
 ####### interpolate traces? #####
-X, Y = np.where(masker>0)
-#Test
-Z = Cube[2000, X, Y]
-Slice=SC.griddata((X,Y+Low_bound),Z, (Meshx, Meshy), method='cubic', fill_value=0)
-fig, ax = plt.subplots(3,1)
-ax[0].imshow(masker, vmax=1, aspect='auto', cmap='gray')
-ax[1].imshow(Cube[2000,:,:], vmin=-0.5, vmax=0.5, aspect='auto')
-ax[2].imshow(Slice.T, vmin=-0.5, vmax=0.5, aspect='auto')
-plt.show()
+###### CubeI.npy save ##########
+# X, Y = np.where(masker>0)
+# CubeI = np.zeros(shape=(6250, len(xi), len(yi)))
+# for i in range(len(Cube)):
+#     CubeI[i] = SC.griddata((X,Y+Low_bound), Cube[i, X, Y], (Meshx, Meshy), method='cubic', fill_value=0).T
+# fig, ax = plt.subplots(3,1)
+# ax[0].imshow(masker, vmax=1, aspect='auto', cmap='gray')
+# ax[1].imshow(Cube[1000,:,:], vmin=-0.5, vmax=0.5, aspect='auto')
+# ax[2].imshow(Slice.T, vmin=-0.5, vmax=0.5, aspect='auto')
+# plt.show()
 
-
-
+# ns=len(Cube)
+# if __name__ == '__main__':
+#     pool = Pool()
+#     pool.map(Fill_Slice, [(Filtered_line[:,t], Meshx, Meshy, x, y, t) for t in range(ns)])
+# pool.close()
+# pool.join()
+for i in range(len(yi)):
+    np.savetxt(Dir[:-4]+os.sep+'CDP'+os.sep+'CdP_py_'+str(i+Low_bound)+'.dat', Cube[:,:,i], delimiter=',')
+# axis = [{'d':'0.004','o':'0','l':'Traces','u':'s'}, {'d':'50','o':'0','l':'Offsets','u':'m'},     {'d':'100','o':str(Low_bound),'l':'CdP','u':'m'}]
+# Out = m8r.Output(Dir+os.sep+'Cube_bined.rsf')
+# dim = np.shape(Cube)[::-1]
+# axis=[]#Rsf transposed compared to numpy
+# for i in range(len(axis)):
+#     axis[i]['n']=dim[i]
+#     Out.putaxis(axis[i], i+1)
+# Out.write(Cube.transpose())
 
 
 
