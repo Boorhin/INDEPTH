@@ -44,80 +44,80 @@ All, MaskedShots = [], []
 #need to map the velocities along the line
 Vo= 1794
 MaxAlt = 4573599
-for i in range(456):
-    Shot ='Shots/Shot_'+str(i)
-    Trace ='Trace/Trace_'+str(i)
-    tilted ='tilted/tilted%s'%i
-    noiz ='noiz/noiz%s'%i
-    sign ='sign/sign%s'%i
-    mask ='mask/mask%s'%i
-    dat2 ='dat2/dat2_%s'%i
-    ndip ='ndip/ndip%s'%i
-    sdip ='sdip/sdip%s'%i
-    pq   ='pq/pq%s'%i
-    sdip2='sdip2/sdip2_%s'%i
-    ndip2='ndip2/ndip2_%s'%i
-    signoi ='signoi/signoi%s'%i
-    noiz2 ='noiz2/noiz2_%s'%i
-    sign2 ='sign2/sign2_%s'%i
-    lowf ='lowf/lowf%s'%i
-    sign3 ='sign3/sign3_%s'%i
-    noiz3 ='noiz3/noiz3_%s'%i
-    PShot ='Fig/PShot_%s'%i
-    Psign ='Fig/Psign_%s'%i
-    Pnoiz ='Fig/Pnoiz_%s'%i
-    Compare ='Fig/Compare_%s'%i
-    Shot_Mask_bin = 'Shot_mask/Shot_Mask_bin_%s'%i
-    Offsets = 'Offsets/Offsets_%s'%i
-    Headers = 'Headers/Headers_%s'%i
-    Statics = 'Statics/Statics_%s'%i
-    Flow(Shot_Mask_bin, 'Utils/Cube_mask', 'window f3=%d n3=1'%i)
-    MaskedShots.append(Shot_Mask_bin)
-    All.append(sign3)
-    if i in DeadShots:
-        Flow(Shot,'RSF/Cube.rsf','window n1=6250 f3=%d n3=1 | headercut mask="Utils/Shot_Mask.rsf"'%i)
-        Flow(sign3, Shot, 'cp')
-    else:
-        Flow(Shot,'RSF/Cube.rsf', 'window n1=6250 f3=%d n3=1'%i)
-        Vo = 1000
-        padding = 1500
-        nj = (3,2)
-        Flow(tilted, Shot       , 'pad beg1=%d | stretch rule=l v0=%d half=n delay=0 verb=y'%(padding, Vo))
-        Flow(noiz  ,tilted      ,'bandpass fhi=10 | mutter v0=%d half=n'%(Vo*2))
-        Flow(sign  ,tilted      ,'bandpass flo=10')
-        Flow(mask  ,noiz        , 'math output="abs(input)" | mask min=0.02 | dd type=float')
-        Flow(dat2  , [tilted,mask],'add mode=p ${SOURCES[1]}')
-        Flow(ndip  ,noiz       ,'twodip2 order=3 nj1=%d nj2=%d eps=8 verb=n gauss=n p0=2 q0=-2'%(nj[0],nj[0]))
-        Flow(sdip  ,sign, twodip2(nj[1],nj[1],'p0=-2 q0=2'))
-        Flow(pq    ,[dat2, sdip,ndip,mask],twodip2(nj[1],nj[0],'dip1=${SOURCES[1]} dip2=${SOURCES[2]} mask=${SOURCES[3]}'))
-        Flow(sdip2 ,pq, 'window n3=1')
-        Flow(ndip2 ,pq,'window f3=1')
-        Flow(signoi,[dat2,sdip2,ndip2],'''
-             planesignoi sdip=${SOURCES[2]} ndip=${SOURCES[1]}
-             order=3 nj1=%d nj2=%d eps=2 verb=n niter=100'''%nj)
-        #back rotate
-        Flow(noiz2, signoi,'window n3=1 | lmostretch inv=y v0=%d half=n delay=0 | window f1=%d'%(Vo,padding))
-        Flow(sign2,[signoi, mask, tilted, dat2],'''
-             window f3=1 |
-             add mode=p ${SOURCES[1]} | add scale=1,1,-1 ${SOURCES[2:4]} |
-             lmostretch inv=y v0=%d half=n delay=0 | window f1=%d'''%(Vo, padding))
-        Flow(lowf, sign2, 'bandpass fhi=8')
-        Flow(Headers, 'RSF/TIB01_T', 'window f2=120*%s n2=120'%i)
-        Flow(Offsets, Headers, 'headermath output="offset" | window')
-        Flow(Statics, Headers,'headermath output="((-1*(%s-selev)/scalel)+(gelev-selev)/scalel)/%s"' %(MaxAlt,Vo))
-        Flow(sign3,[sign2,lowf,Statics, Offsets],'add scale=1,-1 ${SOURCES[1]} | stretch rule=d datum=${SOURCES[2]} | mutter offset=${SOURCES[3]} V0=2000 | despike2 wide1=3 wide2=5')
-        Flow(noiz3,[noiz2,lowf],'add ${SOURCES[1]}')
+# for i in range(456):
+#     Shot ='Shots/Shot_'+str(i)
+#     Trace ='Trace/Trace_'+str(i)
+#     tilted ='tilted/tilted%s'%i
+#     noiz ='noiz/noiz%s'%i
+#     sign ='sign/sign%s'%i
+#     mask ='mask/mask%s'%i
+#     dat2 ='dat2/dat2_%s'%i
+#     ndip ='ndip/ndip%s'%i
+#     sdip ='sdip/sdip%s'%i
+#     pq   ='pq/pq%s'%i
+#     sdip2='sdip2/sdip2_%s'%i
+#     ndip2='ndip2/ndip2_%s'%i
+#     signoi ='signoi/signoi%s'%i
+#     noiz2 ='noiz2/noiz2_%s'%i
+#     sign2 ='sign2/sign2_%s'%i
+#     lowf ='lowf/lowf%s'%i
+#     sign3 ='sign3/sign3_%s'%i
+#     noiz3 ='noiz3/noiz3_%s'%i
+#     PShot ='Fig/PShot_%s'%i
+#     Psign ='Fig/Psign_%s'%i
+#     Pnoiz ='Fig/Pnoiz_%s'%i
+#     Compare ='Fig/Compare_%s'%i
+#     Shot_Mask_bin = 'Shot_mask/Shot_Mask_bin_%s'%i
+#     Offsets = 'Offsets/Offsets_%s'%i
+#     Headers = 'Headers/Headers_%s'%i
+#     Statics = 'Statics/Statics_%s'%i
+#     Flow(Shot_Mask_bin, 'Utils/Cube_mask', 'window f3=%d n3=1'%i)
+#     MaskedShots.append(Shot_Mask_bin)
+#     All.append(sign3)
+#     if i in DeadShots:
+#         Flow(Shot,'RSF/Cube.rsf','window n1=6250 f3=%d n3=1 | headercut mask="Utils/Shot_Mask.rsf"'%i)
+#         Flow(sign3, Shot, 'cp')
+#     else:
+#         Flow(Shot,'RSF/Cube.rsf', 'window n1=6250 f3=%d n3=1'%i)
+#         Vo = 1000
+#         padding = 1500
+#         nj = (3,2)
+#         Flow(tilted, Shot       , 'pad beg1=%d | stretch rule=l v0=%d half=n delay=0 verb=y'%(padding, Vo))
+#         Flow(noiz  ,tilted      ,'bandpass fhi=10 | mutter v0=%d half=n'%(Vo*2))
+#         Flow(sign  ,tilted      ,'bandpass flo=10')
+#         Flow(mask  ,noiz        , 'math output="abs(input)" | mask min=0.02 | dd type=float')
+#         Flow(dat2  , [tilted,mask],'add mode=p ${SOURCES[1]}')
+#         Flow(ndip  ,noiz       ,'twodip2 order=3 nj1=%d nj2=%d eps=8 verb=n gauss=n p0=2 q0=-2'%(nj[0],nj[0]))
+#         Flow(sdip  ,sign, twodip2(nj[1],nj[1],'p0=-2 q0=2'))
+#         Flow(pq    ,[dat2, sdip,ndip,mask],twodip2(nj[1],nj[0],'dip1=${SOURCES[1]} dip2=${SOURCES[2]} mask=${SOURCES[3]}'))
+#         Flow(sdip2 ,pq, 'window n3=1')
+#         Flow(ndip2 ,pq,'window f3=1')
+#         Flow(signoi,[dat2,sdip2,ndip2],'''
+#              planesignoi sdip=${SOURCES[2]} ndip=${SOURCES[1]}
+#              order=3 nj1=%d nj2=%d eps=2 verb=n niter=100'''%nj)
+#         #back rotate
+#         Flow(noiz2, signoi,'window n3=1 | lmostretch inv=y v0=%d half=n delay=0 | window f1=%d'%(Vo,padding))
+#         Flow(sign2,[signoi, mask, tilted, dat2],'''
+#              window f3=1 |
+#              add mode=p ${SOURCES[1]} | add scale=1,1,-1 ${SOURCES[2:4]} |
+#              lmostretch inv=y v0=%d half=n delay=0 | window f1=%d'''%(Vo, padding))
+#         Flow(lowf, sign2, 'bandpass fhi=8')
+#         Flow(Headers, 'RSF/TIB01_T', 'window f2=120*%s n2=120'%i)
+#         Flow(Offsets, Headers, 'headermath output="offset" | window')
+#         Flow(Statics, Headers,'headermath output="((-1*(%s-selev)/scalel)+(gelev-selev)/scalel)/%s"' %(MaxAlt,Vo))
+#         Flow(sign3,[sign2,lowf,Statics, Offsets],'add scale=1,-1 ${SOURCES[1]} | stretch rule=d datum=${SOURCES[2]} | mutter offset=${SOURCES[3]} V0=2000 | despike2 wide1=3 wide2=5')
+#         Flow(noiz3,[noiz2,lowf],'add ${SOURCES[1]}')
 
         #Plot(PShot, Shot, 'window max1=10 | grey title=%s gpow=1'%Shot)
         #Plot(Psign, sign3, 'window max1=10 | grey title=%s_signal gpow=1'%Shot)
         #Plot(Pnoiz,noiz3, 'window max1=10 | grey title=%s_noise gpow=1'%Shot)
-        #Result(Compare, [PShot, Psign, Pnoiz],'SideBySideAniso')
-Flow('Utils/Maskheader', MaskedShots, 'rcat ${SOURCES[1:-1]} axis=1')
-Flow('RSF/Filt_line', All, 'rcat ${SOURCES[1:-1]} axis=2')
-Masked_Line = 'RSF/Masked_line'
-Flow(Masked_Line, ['RSF/Filt_line', 'Utils/Maskheader'], 'headerwindow mask=${SOURCES[1]}')
-# Flow('RSF/CDPs',Masked_Line, 'sfintbin axis=n2 xk=cdpx yk=cdpy mask="Utils/CDPs_mask.rsf" map="Utils/CDPs_map.rsf"')
-Flow('New_Head', 'New_Head.dat', 'csv2rsf delimiter="," dtype=int| transp')
+#         #Result(Compare, [PShot, Psign, Pnoiz],'SideBySideAniso')
+# Flow('Utils/Maskheader', MaskedShots, 'rcat ${SOURCES[1:-1]} axis=1')
+# Flow('RSF/Filt_line', All, 'rcat ${SOURCES[1:-1]} axis=2')
+# Masked_Line = 'RSF/Masked_line'
+# Flow(Masked_Line, ['RSF/Filt_line', 'Utils/Maskheader'], 'headerwindow mask=${SOURCES[1]}')
+# # Flow('RSF/CDPs',Masked_Line, 'sfintbin axis=n2 xk=cdpx yk=cdpy mask="Utils/CDPs_mask.rsf" map="Utils/CDPs_map.rsf"')
+# Flow('New_Head', 'New_Head.dat', 'csv2rsf delimiter="," dtype=int| transp')
 #############Import interpolated time-slices ##########################
 #######################################################################
 # CdPl = []
@@ -134,15 +134,19 @@ Flow('New_Head', 'New_Head.dat', 'csv2rsf delimiter="," dtype=int| transp')
 V1= 1500.
 V2= 10000.
 Low_bound, High_bound = 84, 954
-for C in range(Low_bound, High_bound):
-    Flow('CDP/CdP_py_%s'%C,'CDP/CdP_py_%s.dat'%C,  'sfcsv2rsf | put d1=0.004 label1="Time", unit1="s" d2=50 label2="Offset" unit2="m"')
+###################Import CdP with bin stack ##########################
+#######################################################################
+# for C in range(Low_bound, High_bound):
+#     Flow('CDP/CdP_py_%s'%C,'CDP/CdP_py_%s.dat'%C,  'sfcsv2rsf | put d1=0.004 label1="Time", unit1="s" d2=50 label2="Offset" unit2="m"')
 # Flow('RSF/CdP3t', 'RSF/CdP3', 'transp plane=23 | transp plane 13 | put d1=0.004 label1="Time" unit1="s" d2=25 label2="Offset" unit2="m" d3=25 label3="CdP" unit3="m" o3=%s'%Low_bound)
 # Flow('RSF/CdP2',[Masked_Line, 'New_Head'], 'sfintbin axis=n2 head=${SOURCES[1]} xkey=1 ykey=2 mask="Utils/CDP2_mask.rsf" map="Utils/CDP2_map.rsf"| sfput d3=25 d2=25 label3="CDP" label2="Offset" unit2="m" unit3="m"')
 #Flow('RSF/Brute_Stack', 'RSF/CdP3t', 'stack axis=2')
-CdPs, NMO, pNMO, Vel_Picks = [], [], [], []
+CdPs, NMO, pNMO, Vel_Picks, NMO_Sp = [], [], [], [], []
 for i in range(Low_bound,High_bound):
     cdp = 'CDP/cdp_%s'%i
     cdp_mask = 'CDP_Mask/cdp_Mask_%s'%i
+    NMO_Spike = 'NMO/NMO_Spike_%s'%i
+    Compare_Filt ='Compare/filt_%s'%i
     Sembl = 'Sembl/Sembl_%s'%i
     vpick = 'Vpick/Vpick_%s'%i
     nmo = 'Nmo/Nmo_%s'%i
@@ -175,9 +179,13 @@ for i in range(Low_bound,High_bound):
     NMO.append(nmo)
     pNMO.append(Pnmo)
     Vel_Picks.append(vpick)
+    NMO_Sp.append(NMO_Spike)
     #Flow(cdp_mask, 'Utils/CDPs_mask.rsf','window f2=%s n2=1'%i)
-    Flow(cdp, 'CDP/CdP_py_%s'%i, 'window f2=4 | bandpass flo=10 | pow pow1=2')
-    Result(cdp,  'grey')
+    # Flow(cdp, 'CDP/CdP_py_%s'%i, 'window f2=4 | trapez frequency=5,15,80,100 | pow pow1=2')
+
+    Plot(cdp,  'grey')
+    #Plot(CdP_Spike,  'grey')
+    #Result(Compare_Filt, [cdp,CdP_Spike],'SideBySideAniso')
     # Flow(FMask, cdp, 'math output="input*input" | mask min=0.01')
     # Flow(Fmask2,Fmask,'dd type=float')
     # Flow(CdP2, [Fmask2, cdp], 'add mode=p ${SOURCES[1]}')
@@ -194,8 +202,10 @@ for i in range(Low_bound,High_bound):
     Plot(vpick,vpick, 'graph title="semblance velocity" transp=y')
     Flow(vdip,vpick,'v2d n=128 d=20 o=0 mute=y half=y v0=10000 t0=0.004 tp=0.1')
     Flow(nmo, [cdp, vpick],'nmo velocity=${SOURCES[1]} half=y')
-    Plot(nmo, nmo, 'envelope | sfgrey color=i scalebar=y title="standard nmo"')
-    #Flow(vseis,[cdp, vdip], 'seislet dip=${SOURCES[1]} type=b eps=0.01 adj=y inv=y unit=y')
+    Plot(nmo, nmo, 'sfgrey color=i scalebar=y title="standard nmo"')
+    Flow(NMO_Spike, NMO, 'pef maxlag=.04 | fft1 | math output="input*conj(input)" | fft1 inv=y | window n1=6250 | trapez frequency=5,15,60,100')
+    Plot(NMO_Spike, NMO_Spike, 'sfgrey color=i scalebar=y title="Filtered standard nmo"')
+    Result(Compare_Filt, [nmo, NMO_Spike], 'SideBySideAniso')  #Flow(vseis,[cdp, vdip], 'seislet dip=${SOURCES[1]} type=b eps=0.01 adj=y inv=y unit=y')
 
     #Flow(Cl_cdp,[vseis, vdip],'threshold pclip=5 | seislet dip=${SOURCES[1]} type=b eps=0.01 adj=n inv=y unit=y  | mutter v0=4500 x0=0 abs=n')
     Flow(Dip0,cdp,dip(1./V1-1./V2))
@@ -203,7 +213,7 @@ for i in range(Low_bound,High_bound):
     Flow(Dip2,[cdp, Dip0, Dip1],'nmostretch half=y v0=%s | twodip2 dip1=${SOURCES[1]} q0=0 order=3 niter=10 eps=200 lam=40 | window n3=1 | math ref=${SOURCES[2]} output="input+ref" '%V1)
     Flow(Dip3, [cdp,Dip2], 'dip idip=${SOURCES[1]} order=3 niter=10 liter=100 rect=50 rect2=20 pmin=0')
     Flow([Pnmo,PVel], [cdp, Dip3], 'pnmo dip=${SOURCES[1]} vel=${TARGETS[1]}')
-    Plot(Pnmo, Pnmo, 'envelope | sfgrey color=i scalebar=y title="slope nmo"')
+    Plot(Pnmo, Pnmo, 'sfgrey color=i scalebar=y title="slope nmo"')
     Plot(PVel, PVel, 'graph title="slope velocity" transp=y')
     Result(Pplot,[Pnmo, nmo], 'SideBySideAniso')
     Flow(Dip05,Dip3,'window min2=500 | despike2 wide1=7 wide2=7')
@@ -217,25 +227,25 @@ for i in range(Low_bound,High_bound):
 Flow('RSF/NMO', NMO, 'rcat ${SOURCES[1:-1]} axis=3')
 Flow('RSF/pNMO', pNMO, 'rcat ${SOURCES[1:-1]} axis=3')
 Flow('RSF/Vel_Picks', Vel_Picks, 'rcat ${SOURCES[1:-1]} axis=2')
-Flow('RSF/NMO_Stack','RSF/NMO', 'stack axis =2' )
-Flow('RSF/pNMO_Stack','RSF/pNMO', 'stack axis =2' )
-Flow('RSF/Vel_Picks_Stack','RSF/Vel_Picks', 'stack axis =2' )
-Result('Stack/NMO_Stack', 'RSF/NMO_Stack', 'grey scalebar=y title="nmo Brute Stack"')
-Result('Stack/pNMO_Stack', 'RSF/pNMO_Stack', 'grey scalebar=y title="slope nmo Brute Stack"')
-Plot('RSF/Vel_Picks_Stack','RSF/Vel_Picks_Stack', 'graph title="velocity function" transp=y')
-Plot('RSF/Vel_Picks', 'RSF/Vel_Picks', 'grey color=j scalebar=y title="Velocity picks"')
-Result('Stack/Vel_Picks_Stack', ['RSF/Vel_Picks_Stack','RSF/Vel_Picks'], 'SideBySideAniso' )
+Flow('RSF/Filt_NMO', NMO_Sp, 'rcat ${SOURCES[1:-1]} axis=2')
+Flow('RSF/NMO_Stack','RSF/NMO', 'stack axis=2' )
+Flow('RSF/pNMO_Stack','RSF/pNMO', 'stack axis=2' )
+Flow('RSF/Filt_NMO_Stack','RSF/Filt_NMO', 'stack axis=2')
+### NaN in the Velocity
+Flow('RSF/Vel_Picks_Stack','RSF/Vel_Picks', 'clip2 lower=2000 upper=8000 |stack axis=2' )
+Result('Stack/NMO_Stack', 'RSF/NMO_Stack', 'agc rect=20 | grey color=seismic scalebar=y maxval=8 minval=-8 title="nmo Brute Stack"')
+Result('Stack/Filt_NMO_Stack', 'RSF/Filt_NMO_Stack', 'agc rect=20 | grey color=seismic scalebar=y maxval=8 minval=-8 title="nmo Brute Stack"')
+Result('Stack/pNMO_Stack', 'RSF/pNMO_Stack', 'despike2 wide1=2 wide2=3 | agc rect1=6000 rect2=50 | grey pclip=95 color=seismic scalebar=y maxval=8 minval=-8 title="slope nmo Brute Stack"')
+Plot('RSF/Vel_Picks_Stack','RSF/Vel_Picks_Stack', 'window n2=1 | graph title="velocity function" transp=y')
+Result('RSF/Vel_Picks', 'RSF/Vel_Picks', 'clip2 lower=2000 upper=8000 | despike wide1=100 wide2=50 | sfagc rect1=6500 rect2=200 | put d2=100 label2="CdP" unit2="m"  | grey color=x scalebar=y polarity=y title="NMO Velocity picks"')
+# Result('Stack/Vel_Picks_Stack', ['RSF/Vel_Picks_Stack','RSF/Vel_Picks'], 'SideBySideAniso' )
 #Result('PCDP', 'CDPs', 'grey3 pclip=99.9 title="CDPs" flat=y movie=3')
 
 
 #########TODO#####
  ###statics###
 #Vo=in header
-#Correct CMP for stacking traces in same bin...
-#Reuse horrible CDPx, CDPy?
-#Do the sorting in python and interpolate with RegularGridInterpolator
-#https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.RegularGridInterpolator.html#scipy.interpolate.RegularGridInterpolator
-#OR rather this https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.interpn.html#scipy.interpolate.interpn
+#Use sfmaskinv http://reproducibility.org/RSF/sfmaskinv.html to predict data.
 
 
 End()
