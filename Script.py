@@ -292,12 +292,6 @@ def RemoveGroundRoll(Sh_Rec, V0=30, padding=1000):
     noiz3  = m8r.add(scale='1, 1')[noiz2,lowf] #assuming sfadd without instruction is just an addition...
     return
 
-def Fill_Slice((Data_Slice, Meshx, Meshy, x, y, t)):
-    '''Interpolate discrete values at constant t
-    To regularize the data'''
-    Slice=SC.griddata((x,y),Data_Slice, (Meshx, Meshy), method='linear', fill_value=0)
-    np.savetxt(Dir+os.sep+'CdP_Slice_'+str(t)+'.dat', Slice, delimiter=',')
-    return
 ##def get_trace(ShotPoint, Trace):
 ##    Data, TrHead = getData (Dir, File, Header)
 ##    extract trace and headers
@@ -334,7 +328,7 @@ TraceH, Cube  = np.zeros((Geom[0], Nh, Receivers)), np.zeros(Geom)
 ######Creating a mask for the Cube #########
 ## dead shots checked 2 times for possible info (time shift and not scaled values)
 # DeadShots = [0, 3, 4, 24, 25, 37, 38, 47, 48, 52, 53, 74, 75, 87, 106, 108, 111, 112,120, 121, 137, 153, 154, 171, 186, 202, 203, 220, 235, 238, 297, 298, 309, 310, 316, 317, 335, 336, 349, 350, 355, 374, 375, 396, 397, 419, 420, 431, 432]
-# ManDeadTr = np.array([[20,39],[20,43],[21,41],[21,110],[23,35],[28,10],[70,48],[81,8],[159,67],[175,26],[187,115],[187,116],[188,111],[188,112],[201,38],[284,55],[285,51],[435,112],[435,116],[435,119],[436,44],[437,108],[437,115],[438,111],[443,55],[443,91],[444,51]])
+
 # WeirdShots=[36,88,138,170,201,234,325, 337,338,427, 436]
 #
 # ### Mask for dead shots
@@ -381,24 +375,25 @@ for i in range(len(Pointer)):
 ########Interpolate Missing Data ##########
 Low_bound, High_bound = BinP[0], BinP[-1]+1
 MinOff, MaxOff= int(Offsets.min()),int(Offsets.max()//1)+1
-#Mesh = np.meshgrid(np.zeros(6500), np.zeros(MaxOff-MinOff), np.zeros(BinP[-2]-BinP[0]))
-# Mask= np.zeros((MaxOff, High_bound[-1]))
-# for i in range(len(Pointer)):
-#     Mask[Offsets[i], Pointer[i]] +=1
 xi = np.arange(MinOff, MaxOff)
 yi = np.arange(Low_bound, High_bound)
-Meshx, Meshy = np.meshgrid(xi, yi)
-x = [Offsets[i] for i in range(len(Pointer))]
-y = [Pointer[i] for i in range(len(Pointer))]
+zi =np.arange(6250)
 Filtered_line= LoadRsf (Dir,'Masked_line.rsf')
 Stacks =[]
 Cube = np.zeros(shape=(6250, len(xi), len(yi)))
-masker = np.zeros(shape=(len(xi), len(yi)))
+masker = np.zeros(shape=(len(xi), len(yi)), dtype=np.int)
 for i in range(len(Filtered_line)):
     if Cube[100,Offsets[i], Pointer[i]-Low_bound] != 0:
         Stacks.append((Offsets[i], Pointer[i]-Low_bound))
     masker[Offsets[i], Pointer[i]-Low_bound] += 1
     Cube[:,Offsets[i], Pointer[i]-Low_bound] += Filtered_line[i]
+
+######Traces observed to be problematic during QC##########
+###########################################################
+ManDeadTr = np.array([[20,39],[20,43],[21,41],[21,110],[23,35],[28,10],[70,48],[81,8],[159,67],[175,26],[187,115],[187,116],[188,111],[188,112],[201,38],[284,55],[285,51],[435,112],[435,116],[435,119],[436,44],[437,108],[437,115],[438,111],[443,55],[443,91],[444,51]])
+for dt in range(len(ManDeadTr)):
+    t= ManDeadTr[0]*120+ManDeadTr[1]
+    masker[Offsets[i], Pointer[i]-Low_bound] = 0 ### ignores all stack in case large noise
 
 ###### normalise amplitude where Stacks ########
 ####### of 2 traces in the same bin   ##########
@@ -414,7 +409,8 @@ while n < len(Stacks):
             break
     Cube[:,Stacks[n][0], Stacks[n][1]] /= S
     n += S-1
-####### interpolate traces? #####
+
+####### interpolate traces #####
 ###### CubeI.npy save ##########
 
 def Fill_Slice((Data_Slice, Meshx, Meshy, x, y, t)):
@@ -424,46 +420,51 @@ def Fill_Slice((Data_Slice, Meshx, Meshy, x, y, t)):
     np.savetxt(Dir+os.sep+'CdP_Slice_'+str(t)+'.dat', Slice, delimiter=',')
     return
 
-def Fill_CdP((Dir, Data_Slice, masker, Meshx, Meshy, o)):
+def Fill_CdP((Dir, Data_Slice, masker, MESHZ, MESHX, xi, zi, o)):
     '''Interpolate discrete values at constant CdP
     To regularize the data'''
-    CdP_mask = np.zeros((6250, len(masker)))
-    CdP_mask[:, np.where(masker[:,o]>0)] +=1
-    Z, X = np.where(CdP_mask>0)
-    CdP=SC.griddata((Z,X),Data_Slice[Z, X], (Meshx, Meshy), method='cubic', fill_value=0)
-    np.save(Dir+os.sep+'CdP_Grid_'+str(o), CdP)
+    FileName= Dir+os.sep+'CdP_Grid_'+str(o)+'.npy'
+    if not os.path.isfile(FileName):
+        CdP_mask = np.zeros((6250, len(masker)), dtype=np.int)
+        CdP_mask[:,np.where(masker[:,o]>0.1)] +=1
+        Z, X = np.where(CdP_mask>0.1)
+        Coords = np.vstack((zi[Z],xi[X])).T
+        CdP=SC.griddata(Coords,Data_Slice[Z, X], (MESHZ, MESHX), method='linear', fill_value=0).T
+        np.save(FileName, CdP)
     return
 
 def Fill_MO((Dir, Data_Slice, masker, Meshz, Meshy, s)):
     '''Interpolate discrete values at constant CdP
     To regularize the data'''
-    CdP_mask = np.zeros((6250, len(masker[0])))
-    CdP_mask[:, np.where(masker[s,:]>0)] +=1
-    Z, Y = np.where(CdP_mask>0)
-    MO=SC.griddata((Z,Y),Data_Slice[Z, Y], (Meshz, Meshy), method='cubic', fill_value=0)
-    np.save(Dir+os.sep+'MO_Grid_'+str(s), MO)
+    FileName= Dir+os.sep+'MO_Grid_'+str(s)+'.npy'
+    if not os.path.isfile(FileName):
+        MO_mask = np.zeros((6250, len(masker[0])))
+        MO_mask[:, np.where(masker[s,:]>0.1)] +=1
+        Z, Y = np.where(MO_mask>0.1)
+        MO=SC.griddata((Z,Y),Data_Slice[Z, Y], (Meshz, Meshy), method='linear', fill_value=0)
+        np.save(FileName, MO)
     return
 
-zi =np.arange(6250)
-MESHX, MESHZ = np.meshgrid(xi, zi)
+
+MESHZ, MESHX = np.meshgrid(zi, xi)
 DirCdP = Dir[:-3]+'CdP_filt'
 if __name__ == '__main__':
     pool = Pool()
-    pool.map(Fill_CdP, [(DirCdP, Cube[:,:,o], masker, MESHX, MESHZ, o) for o in range(len(yi))])
+    pool.map(Fill_CdP, [(DirCdP, Cube[:,:,o], masker, MESHZ, MESHX, xi, zi, o) for o in range(len(yi))])
 pool.close()
 pool.join()
 
 CubeI = np.zeros(shape=(6250, len(xi), len(yi)))
 for i in range(len(yi)):
-    CubeI[:,:,i] = np.load(DirCdP+os.sep+'CdP_Grid_'+str(i))
+    CubeI[:,:,i] = np.load(DirCdP+os.sep+'CdP_Grid_'+str(i)+'.npy')
 Meshz, Meshy = np.meshgrid(zi, yi)
 DirMO = Dir[:-3]+'MO_filt'
 Meshz, Meshy = np.meshgrid(zi, yi)
 if __name__ == '__main__':
-    pool = Pool()
-    pool.map(Fill_MO, [(DirMO, CubeI[:,s,:], masker, Meshz, Meshy, s) for s in range(len(xi))])
-pool.close()
-pool.join()
+    pool2 = Pool()
+    pool2.map(Fill_MO, [(DirMO, CubeI[:,s,:], masker, Meshz, Meshy, s) for s in range(10,50)])
+pool2.close()
+pool2.join()
 CubeII = np.zeros(shape=(6250, len(xi), len(yi)))
 for i in range(len(xi)):
     CubeII[:,:,i] = np.load(Dir+os.sep+'MO_Grid_'+str(i))
@@ -481,6 +482,7 @@ for i in range(len(xi)):
 #     axis[i]['n']=dim[i]
 #     Out.putaxis(axis[i], i+1)
 # Out.write(Cube.transpose())
+
 
 
 
