@@ -391,7 +391,6 @@ Meshx, Meshy = np.meshgrid(xi, yi)
 x = [Offsets[i] for i in range(len(Pointer))]
 y = [Pointer[i] for i in range(len(Pointer))]
 Filtered_line= LoadRsf (Dir,'Masked_line.rsf')
-
 Stacks =[]
 Cube = np.zeros(shape=(6250, len(xi), len(yi)))
 masker = np.zeros(shape=(len(xi), len(yi)))
@@ -417,24 +416,63 @@ while n < len(Stacks):
     n += S-1
 ####### interpolate traces? #####
 ###### CubeI.npy save ##########
-# X, Y = np.where(masker>0)
-# CubeI = np.zeros(shape=(6250, len(xi), len(yi)))
-# for i in range(len(Cube)):
-#     CubeI[i] = SC.griddata((X,Y+Low_bound), Cube[i, X, Y], (Meshx, Meshy), method='cubic', fill_value=0).T
-# fig, ax = plt.subplots(3,1)
+
+def Fill_Slice((Data_Slice, Meshx, Meshy, x, y, t)):
+    '''Interpolate discrete values at constant t
+    To regularize the data'''
+    Slice=SC.griddata((x,y),Data_Slice, (Meshx, Meshy), method='cubic', fill_value=0)
+    np.savetxt(Dir+os.sep+'CdP_Slice_'+str(t)+'.dat', Slice, delimiter=',')
+    return
+
+def Fill_CdP((Dir, Data_Slice, masker, Meshx, Meshy, o)):
+    '''Interpolate discrete values at constant CdP
+    To regularize the data'''
+    CdP_mask = np.zeros((6250, len(masker)))
+    CdP_mask[:, np.where(masker[:,o]>0)] +=1
+    Z, X = np.where(CdP_mask>0)
+    CdP=SC.griddata((Z,X),Data_Slice[Z, X], (Meshx, Meshy), method='cubic', fill_value=0)
+    np.save(Dir+os.sep+'CdP_Grid_'+str(o), CdP)
+    return
+
+def Fill_MO((Dir, Data_Slice, masker, Meshz, Meshy, s)):
+    '''Interpolate discrete values at constant CdP
+    To regularize the data'''
+    CdP_mask = np.zeros((6250, len(masker[0])))
+    CdP_mask[:, np.where(masker[s,:]>0)] +=1
+    Z, Y = np.where(CdP_mask>0)
+    MO=SC.griddata((Z,Y),Data_Slice[Z, Y], (Meshz, Meshy), method='cubic', fill_value=0)
+    np.save(Dir+os.sep+'MO_Grid_'+str(s), MO)
+    return
+
+zi =np.arange(6250)
+MESHX, MESHZ = np.meshgrid(xi, zi)
+DirCdP = Dir[:-3]+'CdP_filt'
+if __name__ == '__main__':
+    pool = Pool()
+    pool.map(Fill_CdP, [(DirCdP, Cube[:,:,o], masker, MESHX, MESHZ, o) for o in range(len(yi))])
+pool.close()
+pool.join()
+
+CubeI = np.zeros(shape=(6250, len(xi), len(yi)))
+for i in range(len(yi)):
+    CubeI[:,:,i] = np.load(DirCdP+os.sep+'CdP_Grid_'+str(i))
+Meshz, Meshy = np.meshgrid(zi, yi)
+DirMO = Dir[:-3]+'MO_filt'
+Meshz, Meshy = np.meshgrid(zi, yi)
+if __name__ == '__main__':
+    pool = Pool()
+    pool.map(Fill_MO, [(DirMO, CubeI[:,s,:], masker, Meshz, Meshy, s) for s in range(len(xi))])
+pool.close()
+pool.join()
+CubeII = np.zeros(shape=(6250, len(xi), len(yi)))
+for i in range(len(xi)):
+    CubeII[:,:,i] = np.load(Dir+os.sep+'MO_Grid_'+str(i))
 # ax[0].imshow(masker, vmax=1, aspect='auto', cmap='gray')
 # ax[1].imshow(Cube[1000,:,:], vmin=-0.5, vmax=0.5, aspect='auto')
 # ax[2].imshow(Slice.T, vmin=-0.5, vmax=0.5, aspect='auto')
 # plt.show()
-
-# ns=len(Cube)
-# if __name__ == '__main__':
-#     pool = Pool()
-#     pool.map(Fill_Slice, [(Filtered_line[:,t], Meshx, Meshy, x, y, t) for t in range(ns)])
-# pool.close()
-# pool.join()
-for i in range(len(yi)):
-    np.savetxt(Dir[:-4]+os.sep+'CDP'+os.sep+'CdP_py_'+str(i+Low_bound)+'.dat', Cube[:,:,i], delimiter=',')
+# for i in range(len(yi)):
+#     np.savetxt(Dir[:-4]+os.sep+'CDP'+os.sep+'CdP_py_'+str(i+Low_bound)+'.dat', Cube[:,:,i], delimiter=',')
 # axis = [{'d':'0.004','o':'0','l':'Traces','u':'s'}, {'d':'50','o':'0','l':'Offsets','u':'m'},     {'d':'100','o':str(Low_bound),'l':'CdP','u':'m'}]
 # Out = m8r.Output(Dir+os.sep+'Cube_bined.rsf')
 # dim = np.shape(Cube)[::-1]

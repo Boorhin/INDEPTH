@@ -1,7 +1,7 @@
 #!/usr/bin/csh
 from rsf.proj import *
 import os, sys
-
+os.environ['SFPENOPTS'] = 'bgcolor=w'
 
 def twodip2(nj1,nj2,extra):
     return '''twodip2 order=3 nj1=%d nj2=%d eps=8 verb=n gauss=n''' % (nj1,nj2) + extra
@@ -141,6 +141,7 @@ Low_bound, High_bound = 84, 954
 # Flow('RSF/CdP3t', 'RSF/CdP3', 'transp plane=23 | transp plane 13 | put d1=0.004 label1="Time" unit1="s" d2=25 label2="Offset" unit2="m" d3=25 label3="CdP" unit3="m" o3=%s'%Low_bound)
 # Flow('RSF/CdP2',[Masked_Line, 'New_Head'], 'sfintbin axis=n2 head=${SOURCES[1]} xkey=1 ykey=2 mask="Utils/CDP2_mask.rsf" map="Utils/CDP2_map.rsf"| sfput d3=25 d2=25 label3="CDP" label2="Offset" unit2="m" unit3="m"')
 #Flow('RSF/Brute_Stack', 'RSF/CdP3t', 'stack axis=2')
+Dead_CMP=[101,678,69]
 CdPs, NMO, pNMO, Vel_Picks, NMO_Sp = [], [], [], [], []
 for i in range(Low_bound,High_bound):
     cdp = 'CDP/cdp_%s'%i
@@ -201,9 +202,9 @@ for i in range(Low_bound,High_bound):
     Flow(vpick, Sembl, 'scale axis=2 | pick rect1=40 | window')
     Plot(vpick,vpick, 'graph title="semblance velocity" transp=y')
     Flow(vdip,vpick,'v2d n=128 d=20 o=0 mute=y half=y v0=10000 t0=0.004 tp=0.1')
-    Flow(nmo, [cdp, vpick],'nmo velocity=${SOURCES[1]} half=y')
+    Flow(nmo, [cdp, vpick],'nmo velocity=${SOURCES[1]} half=y | window n2=62')
     Plot(nmo, nmo, 'sfgrey color=i scalebar=y title="standard nmo"')
-    Flow(NMO_Spike, NMO, 'pef maxlag=.04 | fft1 | math output="input*conj(input)" | fft1 inv=y | window n1=6250 | trapez frequency=5,15,60,100')
+    Flow(NMO_Spike, nmo, 'pef minlag=0.002 maxlag=0.02 mincorr=0 maxcorr=3 | fft1 | math output="input*conj(input)" | fft1 inv=y | window n1=6250 | trapez frequency=5,15,80,120')
     Plot(NMO_Spike, NMO_Spike, 'sfgrey color=i scalebar=y title="Filtered standard nmo"')
     Result(Compare_Filt, [nmo, NMO_Spike], 'SideBySideAniso')  #Flow(vseis,[cdp, vdip], 'seislet dip=${SOURCES[1]} type=b eps=0.01 adj=y inv=y unit=y')
 
@@ -233,9 +234,10 @@ Flow('RSF/pNMO_Stack','RSF/pNMO', 'stack axis=2' )
 Flow('RSF/Filt_NMO_Stack','RSF/Filt_NMO', 'stack axis=2')
 ### NaN in the Velocity
 Flow('RSF/Vel_Picks_Stack','RSF/Vel_Picks', 'clip2 lower=2000 upper=8000 |stack axis=2' )
-Result('Stack/NMO_Stack', 'RSF/NMO_Stack', 'agc rect=20 | grey color=seismic scalebar=y maxval=8 minval=-8 title="nmo Brute Stack"')
-Result('Stack/Filt_NMO_Stack', 'RSF/Filt_NMO_Stack', 'agc rect=20 | grey color=seismic scalebar=y maxval=8 minval=-8 title="nmo Brute Stack"')
-Result('Stack/pNMO_Stack', 'RSF/pNMO_Stack', 'despike2 wide1=2 wide2=3 | agc rect1=6000 rect2=50 | grey pclip=95 color=seismic scalebar=y maxval=8 minval=-8 title="slope nmo Brute Stack"')
+Result('Stack/NMO_Stack', 'RSF/NMO_Stack', 'agc rect=20 | grey color=seismic scalebar=y maxval=8 minval=-8 title="nmo Brute Stack", vppen=')
+Flow('Fig/Compare/NMO_Stackp', 'RSF/NMO_Stack', 'prep4plot inp=${SOURCE} out={TARGET} ppi=300')
+Result('Stack/Filt_NMO_Stack', 'RSF/Filt_NMO_Stack', 'agc rect=20 | grey color=seismic scalebar=y maxval=8 minval=-8 title="Filtered_nmo Brute Stack" ppi=300')
+Result('Stack/pNMO_Stack', 'RSF/pNMO_Stack', 'despike2 wide1=2 wide2=3 | agc rect1=6000 rect2=50 | grey pclip=95 color=seismic scalebar=y maxval=8 minval=-8 title="slope nmo Brute Stack" ppi=300')
 Plot('RSF/Vel_Picks_Stack','RSF/Vel_Picks_Stack', 'window n2=1 | graph title="velocity function" transp=y')
 Result('RSF/Vel_Picks', 'RSF/Vel_Picks', 'clip2 lower=2000 upper=8000 | despike wide1=100 wide2=50 | sfagc rect1=6500 rect2=200 | put d2=100 label2="CdP" unit2="m"  | grey color=x scalebar=y polarity=y title="NMO Velocity picks"')
 # Result('Stack/Vel_Picks_Stack', ['RSF/Vel_Picks_Stack','RSF/Vel_Picks'], 'SideBySideAniso' )
