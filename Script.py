@@ -433,15 +433,16 @@ def Fill_CdP((Dir, Data_Slice, masker, MESHZ, MESHX, xi, zi, o)):
         np.save(FileName, CdP)
     return
 
-def Fill_MO((Dir, Data_Slice, masker, Meshz, Meshy, s)):
-    '''Interpolate discrete values at constant CdP
+def Fill_MO((Dir, Data_Slice, masker, Meshz, Meshy, zi, yi, s)):
+    '''Interpolate discrete values at constant Offset
     To regularize the data'''
     FileName= Dir+os.sep+'MO_Grid_'+str(s)+'.npy'
     if not os.path.isfile(FileName):
         MO_mask = np.zeros((6250, len(masker[0])))
         MO_mask[:, np.where(masker[s,:]>0.1)] +=1
         Z, Y = np.where(MO_mask>0.1)
-        MO=SC.griddata((Z,Y),Data_Slice[Z, Y], (Meshz, Meshy), method='linear', fill_value=0)
+        Coords = np.vstack((zi[Z],yi[Y])).T
+        MO=SC.griddata(Coords,Data_Slice[Z, Y], (Meshz, Meshy), method='linear', fill_value=0).T
         np.save(FileName, MO)
     return
 
@@ -453,16 +454,25 @@ if __name__ == '__main__':
     pool.map(Fill_CdP, [(DirCdP, Cube[:,:,o], masker, MESHZ, MESHX, xi, zi, o) for o in range(len(yi))])
 pool.close()
 pool.join()
-
+####### When interpolation failed, put the original data##########
+#####interpolation fails when there is no gap between traces #####
+##################################################################
+ for i in range(551,560):
+     np.save(DirCdP+os.sep+'CdP_Grid_'+str(i)+'.npy',Cube[:,:,i])
+for i in range(594,600):
+     np.save(DirCdP+os.sep+'CdP_Grid_'+str(i)+'.npy',Cube[:,:,i])
+for i in range(611,620):
+     np.save(DirCdP+os.sep+'CdP_Grid_'+str(i)+'.npy',Cube[:,:,i])
+np.save(DirCdP+os.sep+'CdP_Grid_'+str(869)+'.npy',Cube[:,:,i])
 CubeI = np.zeros(shape=(6250, len(xi), len(yi)))
 for i in range(len(yi)):
     CubeI[:,:,i] = np.load(DirCdP+os.sep+'CdP_Grid_'+str(i)+'.npy')
-Meshz, Meshy = np.meshgrid(zi, yi)
+
 DirMO = Dir[:-3]+'MO_filt'
 Meshz, Meshy = np.meshgrid(zi, yi)
 if __name__ == '__main__':
     pool2 = Pool()
-    pool2.map(Fill_MO, [(DirMO, CubeI[:,s,:], masker, Meshz, Meshy, s) for s in range(10,50)])
+    pool2.map(Fill_MO, [(DirMO, CubeI[:,s,:], masker, Meshz, Meshy, zi, yi,s) for s in range(10,50)])
 pool2.close()
 pool2.join()
 CubeII = np.zeros(shape=(6250, len(xi), len(yi)))
