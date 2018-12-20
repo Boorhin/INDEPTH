@@ -136,8 +136,12 @@ V2= 10000.
 Low_bound, High_bound = 84, 954
 ###################Import CdP with bin stack ##########################
 #######################################################################
-# for C in range(Low_bound, High_bound):
-#     Flow('CDP/CdP_py_%s'%C,'CDP/CdP_py_%s.dat'%C,  'sfcsv2rsf | put d1=0.004 label1="Time", unit1="s" d2=50 label2="Offset" unit2="m"')
+Filts =[]
+for C in range(94):
+    # Flow('MO_filt/MoFilt%s'%C,'MO_filt/MO_Grid_%s.dat'%C,  'sfcsv2rsf | put d1=0.004 label1="Time", unit1="s" d2=100 label2="shot" unit2="m"')
+    Filts.append('MO_filt/MoFilt%s'%C)
+Flow('MO_filt/MoFilt_Cube',Filts, 'rcat ${SOURCES[1:-1]} axis=3')
+Flow('MO_filt/MoFilt_Cube_T', 'MO_filt/MoFilt_Cube', 'sftransp | sftransp plane=23 memsize=50000 | put d1=1 o1=0 label1="Time", unit1="s" d2=50 label2="Offset" unit="m" o3=%s d3=100 label3="shot" unit3="m"'%Low_bound)
 # Flow('RSF/CdP3t', 'RSF/CdP3', 'transp plane=23 | transp plane 13 | put d1=0.004 label1="Time" unit1="s" d2=25 label2="Offset" unit2="m" d3=25 label3="CdP" unit3="m" o3=%s'%Low_bound)
 # Flow('RSF/CdP2',[Masked_Line, 'New_Head'], 'sfintbin axis=n2 head=${SOURCES[1]} xkey=1 ykey=2 mask="Utils/CDP2_mask.rsf" map="Utils/CDP2_map.rsf"| sfput d3=25 d2=25 label3="CDP" label2="Offset" unit2="m" unit3="m"')
 #Flow('RSF/Brute_Stack', 'RSF/CdP3t', 'stack axis=2')
@@ -182,7 +186,7 @@ for i in range(Low_bound,High_bound):
     Vel_Picks.append(vpick)
     NMO_Sp.append(NMO_Spike)
     #Flow(cdp_mask, 'Utils/CDPs_mask.rsf','window f2=%s n2=1'%i)
-    # Flow(cdp, 'CDP/CdP_py_%s'%i, 'window f2=4 | trapez frequency=5,15,80,100 | pow pow1=2')
+    Flow(cdp, 'MO_filt/MoFilt_Cube_T', 'window f2=4 n2=70 f3=%s n3=1 | bandpass flo=10 | pow pow1=2'%i)
 
     Plot(cdp,  'grey')
     #Plot(CdP_Spike,  'grey')
@@ -204,9 +208,9 @@ for i in range(Low_bound,High_bound):
     Flow(vdip,vpick,'v2d n=128 d=20 o=0 mute=y half=y v0=10000 t0=0.004 tp=0.1')
     Flow(nmo, [cdp, vpick],'nmo velocity=${SOURCES[1]} half=y | window n2=62')
     Plot(nmo, nmo, 'sfgrey color=i scalebar=y title="standard nmo"')
-    Flow(NMO_Spike, nmo, 'pef minlag=0.002 maxlag=0.02 mincorr=0 maxcorr=3 | fft1 | math output="input*conj(input)" | fft1 inv=y | window n1=6250 | trapez frequency=5,15,80,120')
-    Plot(NMO_Spike, NMO_Spike, 'sfgrey color=i scalebar=y title="Filtered standard nmo"')
-    Result(Compare_Filt, [nmo, NMO_Spike], 'SideBySideAniso')  #Flow(vseis,[cdp, vdip], 'seislet dip=${SOURCES[1]} type=b eps=0.01 adj=y inv=y unit=y')
+    # Flow(NMO_Spike, nmo, 'pef minlag=0.002 maxlag=0.02 mincorr=0 maxcorr=3 | fft1 | math output="input*conj(input)" | fft1 inv=y | window n1=6250 | trapez frequency=5,15,80,120')
+    # Plot(NMO_Spike, NMO_Spike, 'sfgrey color=i scalebar=y title="Filtered standard nmo"')
+    # Result(Compare_Filt, [nmo, NMO_Spike], 'SideBySideAniso')  #Flow(vseis,[cdp, vdip], 'seislet dip=${SOURCES[1]} type=b eps=0.01 adj=y inv=y unit=y')
 
     #Flow(Cl_cdp,[vseis, vdip],'threshold pclip=5 | seislet dip=${SOURCES[1]} type=b eps=0.01 adj=n inv=y unit=y  | mutter v0=4500 x0=0 abs=n')
     Flow(Dip0,cdp,dip(1./V1-1./V2))
@@ -240,14 +244,15 @@ Result('Stack/Filt_NMO_Stack', 'RSF/Filt_NMO_Stack', 'agc rect=20 | grey color=s
 Result('Stack/pNMO_Stack', 'RSF/pNMO_Stack', 'despike2 wide1=2 wide2=3 | agc rect1=6000 rect2=50 | grey pclip=95 color=seismic scalebar=y maxval=8 minval=-8 title="slope nmo Brute Stack" ppi=300')
 Plot('RSF/Vel_Picks_Stack','RSF/Vel_Picks_Stack', 'window n2=1 | graph title="velocity function" transp=y')
 Result('RSF/Vel_Picks', 'RSF/Vel_Picks', 'clip2 lower=2000 upper=8000 | despike wide1=100 wide2=50 | sfagc rect1=6500 rect2=200 | put d2=100 label2="CdP" unit2="m"  | grey color=x scalebar=y polarity=y title="NMO Velocity picks"')
-# Result('Stack/Vel_Picks_Stack', ['RSF/Vel_Picks_Stack','RSF/Vel_Picks'], 'SideBySideAniso' )
-#Result('PCDP', 'CDPs', 'grey3 pclip=99.9 title="CDPs" flat=y movie=3')
+Result('Stack/Vel_Picks_Stack', ['RSF/Vel_Picks_Stack','RSF/Vel_Picks'], 'SideBySideAniso' )
+
+# Result('PCDP', 'CDPs', 'grey3 pclip=99.9 title="CDPs" flat=y movie=3')
 
 
 #########TODO#####
  ###statics###
 #Vo=in header
-#Use sfmaskinv http://reproducibility.org/RSF/sfmaskinv.html to predict data.
+
 
 
 End()

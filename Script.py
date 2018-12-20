@@ -471,13 +471,15 @@ for i in range(len(yi)):
 DirMO = Dir[:-3]+'MO_filt'
 Meshz, Meshy = np.meshgrid(zi, yi)
 if __name__ == '__main__':
-    pool2 = Pool()
-    pool2.map(Fill_MO, [(DirMO, CubeI[:,s,:], masker, Meshz, Meshy, zi, yi,s) for s in range(10,50)])
+    pool2 = Pool(4)
+    pool2.map(Fill_MO, [(DirMO, CubeI[:,s,:], masker, Meshz, Meshy, zi, yi,s) for s in range(len(xi))])
 pool2.close()
 pool2.join()
 CubeII = np.zeros(shape=(6250, len(xi), len(yi)))
 for i in range(len(xi)):
-    CubeII[:,:,i] = np.load(Dir+os.sep+'MO_Grid_'+str(i))
+    slice=np.load(DirMO+os.sep+'MO_Grid_'+str(i)+'.npy')
+    #CubeII[:,:,i] = slice
+    np.savetxt(DirMO+os.sep+'MO_Grid_'+str(i)+'.dat', slice, delimiter=',')
 # ax[0].imshow(masker, vmax=1, aspect='auto', cmap='gray')
 # ax[1].imshow(Cube[1000,:,:], vmin=-0.5, vmax=0.5, aspect='auto')
 # ax[2].imshow(Slice.T, vmin=-0.5, vmax=0.5, aspect='auto')
