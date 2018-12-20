@@ -141,13 +141,13 @@ for C in range(94):
     # Flow('MO_filt/MoFilt%s'%C,'MO_filt/MO_Grid_%s.dat'%C,  'sfcsv2rsf | put d1=0.004 label1="Time", unit1="s" d2=100 label2="shot" unit2="m"')
     Filts.append('MO_filt/MoFilt%s'%C)
 Flow('MO_filt/MoFilt_Cube',Filts, 'rcat ${SOURCES[1:-1]} axis=3')
-Flow('MO_filt/MoFilt_Cube_T', 'MO_filt/MoFilt_Cube', 'sftransp | sftransp plane=23 memsize=50000 | put d1=1 o1=0 label1="Time", unit1="s" d2=50 label2="Offset" unit="m" o3=%s d3=100 label3="shot" unit3="m"'%Low_bound)
+Flow('MO_filt/MoFilt_Cube_T', 'MO_filt/MoFilt_Cube', 'sftransp | sftransp plane=23 memsize=50000 | put d1=0.004 o1=0 label1="Time", unit1="s" d2=50 label2="Offset" unit="m" o3=%s d3=100 label3="shot" unit3="m"'%Low_bound)
 # Flow('RSF/CdP3t', 'RSF/CdP3', 'transp plane=23 | transp plane 13 | put d1=0.004 label1="Time" unit1="s" d2=25 label2="Offset" unit2="m" d3=25 label3="CdP" unit3="m" o3=%s'%Low_bound)
 # Flow('RSF/CdP2',[Masked_Line, 'New_Head'], 'sfintbin axis=n2 head=${SOURCES[1]} xkey=1 ykey=2 mask="Utils/CDP2_mask.rsf" map="Utils/CDP2_map.rsf"| sfput d3=25 d2=25 label3="CDP" label2="Offset" unit2="m" unit3="m"')
 #Flow('RSF/Brute_Stack', 'RSF/CdP3t', 'stack axis=2')
 Dead_CMP=[101,678,69]
 CdPs, NMO, pNMO, Vel_Picks, NMO_Sp = [], [], [], [], []
-for i in range(Low_bound,High_bound):
+for i in range(High_bound-Low_bound):
     cdp = 'CDP/cdp_%s'%i
     cdp_mask = 'CDP_Mask/cdp_Mask_%s'%i
     NMO_Spike = 'NMO/NMO_Spike_%s'%i
@@ -232,15 +232,15 @@ for i in range(Low_bound,High_bound):
 Flow('RSF/NMO', NMO, 'rcat ${SOURCES[1:-1]} axis=3')
 Flow('RSF/pNMO', pNMO, 'rcat ${SOURCES[1:-1]} axis=3')
 Flow('RSF/Vel_Picks', Vel_Picks, 'rcat ${SOURCES[1:-1]} axis=2')
-Flow('RSF/Filt_NMO', NMO_Sp, 'rcat ${SOURCES[1:-1]} axis=2')
+# Flow('RSF/Filt_NMO', NMO_Sp, 'rcat ${SOURCES[1:-1]} axis=2')
 Flow('RSF/NMO_Stack','RSF/NMO', 'stack axis=2' )
 Flow('RSF/pNMO_Stack','RSF/pNMO', 'stack axis=2' )
-Flow('RSF/Filt_NMO_Stack','RSF/Filt_NMO', 'stack axis=2')
+# Flow('RSF/Filt_NMO_Stack','RSF/Filt_NMO', 'stack axis=2')
 ### NaN in the Velocity
 Flow('RSF/Vel_Picks_Stack','RSF/Vel_Picks', 'clip2 lower=2000 upper=8000 |stack axis=2' )
 Result('Stack/NMO_Stack', 'RSF/NMO_Stack', 'agc rect=20 | grey color=seismic scalebar=y maxval=8 minval=-8 title="nmo Brute Stack", vppen=')
 Flow('Fig/Compare/NMO_Stackp', 'RSF/NMO_Stack', 'prep4plot inp=${SOURCE} out={TARGET} ppi=300')
-Result('Stack/Filt_NMO_Stack', 'RSF/Filt_NMO_Stack', 'agc rect=20 | grey color=seismic scalebar=y maxval=8 minval=-8 title="Filtered_nmo Brute Stack" ppi=300')
+# Result('Stack/Filt_NMO_Stack', 'RSF/Filt_NMO_Stack', 'agc rect=20 | grey color=seismic scalebar=y maxval=8 minval=-8 title="Filtered_nmo Brute Stack" ppi=300')
 Result('Stack/pNMO_Stack', 'RSF/pNMO_Stack', 'despike2 wide1=2 wide2=3 | agc rect1=6000 rect2=50 | grey pclip=95 color=seismic scalebar=y maxval=8 minval=-8 title="slope nmo Brute Stack" ppi=300')
 Plot('RSF/Vel_Picks_Stack','RSF/Vel_Picks_Stack', 'window n2=1 | graph title="velocity function" transp=y')
 Result('RSF/Vel_Picks', 'RSF/Vel_Picks', 'clip2 lower=2000 upper=8000 | despike wide1=100 wide2=50 | sfagc rect1=6500 rect2=200 | put d2=100 label2="CdP" unit2="m"  | grey color=x scalebar=y polarity=y title="NMO Velocity picks"')
