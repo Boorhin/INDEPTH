@@ -454,7 +454,7 @@ if __name__ == '__main__':
     pool.map(Fill_CdP, [(DirCdP, Cube[:,:,o], masker, MESHZ, MESHX, xi, zi, o) for o in range(len(yi))])
 pool.close()
 pool.join()
-####### When interpolation failed, put the original data##########
+####### Where interpolation failed, put the original data##########
 #####interpolation fails when there is no gap between traces #####
 ##################################################################
  for i in range(551,560):
@@ -475,11 +475,34 @@ if __name__ == '__main__':
     pool2.map(Fill_MO, [(DirMO, CubeI[:,s,:], masker, Meshz, Meshy, zi, yi,s) for s in range(len(xi))])
 pool2.close()
 pool2.join()
-CubeII = np.zeros(shape=(6250, len(xi), len(yi)))
-for i in range(len(xi)):
-    slice=np.load(DirMO+os.sep+'MO_Grid_'+str(i)+'.npy')
-    #CubeII[:,:,i] = slice
-    np.savetxt(DirMO+os.sep+'MO_Grid_'+str(i)+'.dat', slice, delimiter=',')
+# CubeII = np.zeros(shape=(6250, len(xi), len(yi)))
+########## Save the regularized data in txt for madagascar #############
+# for i in range(len(xi)):
+#     # slice=np.load(DirMO+os.sep+'MO_Grid_'+str(i)+'.npy')
+#     # slice += Cube[:,:,i]
+#     np.savetxt(DirMO+os.sep+'MO_Grid2_'+str(i)+'.dat', slice, delimiter=',')
+###### Reduce the impact of the interpolation VS the original data ####
+CubeII = np.load('CubeII.npy')
+CubeII += Cube  #boost the signal compare to extrapolation equiv of giving a weight
+
+def SaveCDP((i, CdP)):
+    np.savetxt('CDP_R_W8ted/New_CDP_'+str(i)+'.dat', CdP.T, delimiter=',')
+    return
+if __name__ == '__main__':
+    pool3 = Pool(12)
+    pool3.map(SaveCDP, [(i, CubeII[:,:,i]) for i in range(len(yi))])
+pool3.close()
+pool3.join()
+
+
+
+
+
+
+
+
+
+
 # ax[0].imshow(masker, vmax=1, aspect='auto', cmap='gray')
 # ax[1].imshow(Cube[1000,:,:], vmin=-0.5, vmax=0.5, aspect='auto')
 # ax[2].imshow(Slice.T, vmin=-0.5, vmax=0.5, aspect='auto')

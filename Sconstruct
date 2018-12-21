@@ -14,8 +14,10 @@ def grey(title):
 def dip(slow2):
     return '''math output="(%g*x2/x1)" | mutter half=n v0=1400 tp=0.4''' % (slow2*d2/d1)
 d1=0.004
-d2=25 #CdP space
-####DATA LOADING
+d2=25 #Offset sampling, theoretical (practice 50)
+
+######################## DATA LOADING ################################
+########################################################################
 Flow('RSF/TIB01 RSF/TIB01_T RSF/TIB01_H RSF/TIB01_B', 'TIB01.sgy','segyread tape="$SOURCE" tfile=${TARGETS[1]} hfile=${TARGETS[2]} bfile=${TARGETS[3]}',stdin=0 )
 Flow('RSF/Cube', 'RSF/TIB01', 'sfintbin axis=n2 xk=tracf yk=fldr mask="Utils/Cube_mask.rsf" map="Utils/Cube_map.rsf"')
 Flow('Utils/Scalel', 'RSF/TIB01_T', 'headermath output="scalel"| dd type=float | window')
@@ -30,14 +32,12 @@ Flow('Utils/OffShot', 'Utils/Offsets Utils/fldr', 'cat axis=2 ${SOURCES[1]} | wi
 Flow('Utils/cdp', 'RSF/TIB01_T', 'headermath output="cdp" | dd type=float | window| put label1="cdp"')
 Flow('Utils/OffCdp', 'Utils/Offsets Utils/cdp', 'cat axis=2 ${SOURCES[1]}| transp')
 Flow('Utils/Shot_Mask','', 'spike n1=120 mag=0 | dd type=int')
-# # ###Shot processing
-# #
-# # ### to do:
-# # # Find out about statics
-# #
-# # #	 Remove Ground Roll in shot receiver space by rotating
-# # #    then dip-filter the low velocity component
-# # #    and trashing the low frequency, back rotating after
+
+
+######## Remove Ground Roll in shot receiver space by rotating ########
+############  then dip-filter the low velocity component ##############
+########  and trashing the low frequency, back rotating after #########
+############# Plane-wave destruction method from Fomel ################
 NaNShots = [3, 4, 14, 108, 157, 171, 254, 257, 302]
 DeadShots =[0, 5, 6, 27, 28, 40, 41, 50, 51, 55, 77, 78, 90, 110, 112, 115, 116, 124, 125, 141, 158, 159, 177, 192, 208, 209, 226, 241, 244, 306, 307, 318, 319, 325, 326, 344, 345, 358, 359, 364, 383, 384, 405, 406, 428, 428, 440, 441]
 All, MaskedShots = [], []
@@ -118,6 +118,7 @@ MaxAlt = 4573599
 # Flow(Masked_Line, ['RSF/Filt_line', 'Utils/Maskheader'], 'headerwindow mask=${SOURCES[1]}')
 # # Flow('RSF/CDPs',Masked_Line, 'sfintbin axis=n2 xk=cdpx yk=cdpy mask="Utils/CDPs_mask.rsf" map="Utils/CDPs_map.rsf"')
 # Flow('New_Head', 'New_Head.dat', 'csv2rsf delimiter="," dtype=int| transp')
+
 #############Import interpolated time-slices ##########################
 #######################################################################
 # CdPl = []
@@ -131,22 +132,32 @@ MaxAlt = 4573599
 #     Cats.append(Cat)
     # Flow(Cat, CdPl[i:i+250], 'rcat ${SOURCES[1:-1]} axis=3')
 #Flow('RSF/CdP3', Cats, 'rcat ${SOURCES[1:-1]} axis=3 ')
-V1= 1500.
-V2= 10000.
-Low_bound, High_bound = 84, 954
-###################Import CdP with bin stack ##########################
+
+###################Import Offsets with bin stack ##########################
 #######################################################################
-Filts =[]
-for C in range(94):
-    # Flow('MO_filt/MoFilt%s'%C,'MO_filt/MO_Grid_%s.dat'%C,  'sfcsv2rsf | put d1=0.004 label1="Time", unit1="s" d2=100 label2="shot" unit2="m"')
-    Filts.append('MO_filt/MoFilt%s'%C)
-Flow('MO_filt/MoFilt_Cube',Filts, 'rcat ${SOURCES[1:-1]} axis=3')
-Flow('MO_filt/MoFilt_Cube_T', 'MO_filt/MoFilt_Cube', 'sftransp | sftransp plane=23 memsize=50000 | put d1=0.004 o1=0 label1="Time", unit1="s" d2=50 label2="Offset" unit="m" o3=%s d3=100 label3="shot" unit3="m"'%Low_bound)
+# Filts =[]
+# for C in range(94):
+#     # Flow('MO_filt/MoFilt%s'%C,'MO_filt/MO_Grid_%s.dat'%C,  'sfcsv2rsf | put d1=0.004 label1="Time", unit1="s" d2=100 label2="shot" unit2="m"')
+#     Filts.append('MO_filt/MoFilt%s'%C)
+# Flow('MO_filt/MoFilt_Cube',Filts, 'rcat ${SOURCES[1:-1]} axis=3')
+# Flow('MO_filt/MoFilt_Cube_T', 'MO_filt/MoFilt_Cube', 'sftransp | sftransp plane=23 memsize=50000 | put d1=0.004 o1=0 label1="Time", unit1="s" d2=50 label2="Offset" unit="m" o3=%s d3=100 label3="shot" unit3="m"'%Low_bound)
+
+###################Import regularized CdPs  ##########################
+#######################################################################
+for C in range(870):
+    Flow('CDP_R_W8ted/CdP4_%s'%C, 'CDP_R_W8ted/New_CDP_%s.dat'%C, 'sfcsv2rsf | sftransp | put d1=0.004 label1="Time", unit1="s" d2=50 label2="shot" unit2="m"| window f2=4 n2=70')
+
 # Flow('RSF/CdP3t', 'RSF/CdP3', 'transp plane=23 | transp plane 13 | put d1=0.004 label1="Time" unit1="s" d2=25 label2="Offset" unit2="m" d3=25 label3="CdP" unit3="m" o3=%s'%Low_bound)
 # Flow('RSF/CdP2',[Masked_Line, 'New_Head'], 'sfintbin axis=n2 head=${SOURCES[1]} xkey=1 ykey=2 mask="Utils/CDP2_mask.rsf" map="Utils/CDP2_map.rsf"| sfput d3=25 d2=25 label3="CDP" label2="Offset" unit2="m" unit3="m"')
 #Flow('RSF/Brute_Stack', 'RSF/CdP3t', 'stack axis=2')
+
+####################### Process CdP #####################################
+#########################################################################
+V1= 1500.
+V2= 10000.
+Low_bound, High_bound = 84, 954
 Dead_CMP=[101,678,69]
-CdPs, NMO, pNMO, Vel_Picks, NMO_Sp = [], [], [], [], []
+CdPs, NMO, pNMO, Vel_Picks, NMO_Sp, P_Vels = [], [], [], [], [], []
 for i in range(High_bound-Low_bound):
     cdp = 'CDP/cdp_%s'%i
     cdp_mask = 'CDP_Mask/cdp_Mask_%s'%i
@@ -185,22 +196,9 @@ for i in range(High_bound-Low_bound):
     pNMO.append(Pnmo)
     Vel_Picks.append(vpick)
     NMO_Sp.append(NMO_Spike)
-    #Flow(cdp_mask, 'Utils/CDPs_mask.rsf','window f2=%s n2=1'%i)
-    Flow(cdp, 'MO_filt/MoFilt_Cube_T', 'window f2=4 n2=70 f3=%s n3=1 | bandpass flo=10 | pow pow1=2'%i)
-
+    P_Vels.append(PVel)
+    Flow(cdp, 'CDP_R_W8ted/CdP4_%s'%(i), 'bandpass flo=10 | pow pow1=2')
     Plot(cdp,  'grey')
-    #Plot(CdP_Spike,  'grey')
-    #Result(Compare_Filt, [cdp,CdP_Spike],'SideBySideAniso')
-    # Flow(FMask, cdp, 'math output="input*input" | mask min=0.01')
-    # Flow(Fmask2,Fmask,'dd type=float')
-    # Flow(CdP2, [Fmask2, cdp], 'add mode=p ${SOURCES[1]}')
-    # Flow(Freq, CdP2, 'twofreq2')
-    # for case in range(2):
-    #     eps=(0.1,5)[case]
-    #     Flow(Exp+str(case), [CdP2, Freq])
-    # Flow(CdP_Sdip, [Exp+str(1), Fmask], 'window n3=1 | dip verb=y order=2 rect1=10 rect2=10 mask=${SOURCES[1]}'))
-    # Flow(CdP_Ndip, [Exp+str(2), Fmask], 'window n3=1 | dip verb=y order=2 rect1=10 rect2=10 mask=${SOURCES[1]}'))
-    # Flow('sn',[CdP2, CdP_Ndip, CdP_Sdip, Freq],'explanesignoi niter=2000 verb=y ndip=${SOURCES[1]} sdip=${SOURCES[2]} freq=${SOURCES[3]} eps=0.01')
     Flow(Sembl, cdp, 'vscan semblance=y v0=%d dv=20 nv=400 half=y'%V1)
     Result(Sembl, Sembl,'envelope | grey color=j scalebar=y')
     Flow(vpick, Sembl, 'scale axis=2 | pick rect1=40 | window')
@@ -208,11 +206,6 @@ for i in range(High_bound-Low_bound):
     Flow(vdip,vpick,'v2d n=128 d=20 o=0 mute=y half=y v0=10000 t0=0.004 tp=0.1')
     Flow(nmo, [cdp, vpick],'nmo velocity=${SOURCES[1]} half=y | window n2=62')
     Plot(nmo, nmo, 'sfgrey color=i scalebar=y title="standard nmo"')
-    # Flow(NMO_Spike, nmo, 'pef minlag=0.002 maxlag=0.02 mincorr=0 maxcorr=3 | fft1 | math output="input*conj(input)" | fft1 inv=y | window n1=6250 | trapez frequency=5,15,80,120')
-    # Plot(NMO_Spike, NMO_Spike, 'sfgrey color=i scalebar=y title="Filtered standard nmo"')
-    # Result(Compare_Filt, [nmo, NMO_Spike], 'SideBySideAniso')  #Flow(vseis,[cdp, vdip], 'seislet dip=${SOURCES[1]} type=b eps=0.01 adj=y inv=y unit=y')
-
-    #Flow(Cl_cdp,[vseis, vdip],'threshold pclip=5 | seislet dip=${SOURCES[1]} type=b eps=0.01 adj=n inv=y unit=y  | mutter v0=4500 x0=0 abs=n')
     Flow(Dip0,cdp,dip(1./V1-1./V2))
     Flow(Dip1,cdp,dip(1./V2))
     Flow(Dip2,[cdp, Dip0, Dip1],'nmostretch half=y v0=%s | twodip2 dip1=${SOURCES[1]} q0=0 order=3 niter=10 eps=200 lam=40 | window n3=1 | math ref=${SOURCES[2]} output="input+ref" '%V1)
@@ -222,8 +215,8 @@ for i in range(High_bound-Low_bound):
     Plot(PVel, PVel, 'graph title="slope velocity" transp=y')
     Result(Pplot,[Pnmo, nmo], 'SideBySideAniso')
     Flow(Dip05,Dip3,'window min2=500 | despike2 wide1=7 wide2=7')
-    Flow(Vtr,[cdp, Dip05],'window min2=500 | pveltran v0=%d dv=10 nv=800 dip=${SOURCES[1]}'%V1)
-    Flow(Vtk,Vtr, 'envelope | scale axis=2 | pick rect1=20 |  window min1=1.2 | remap1 pattern=$SOURCE order=2')
+    # Flow(Vtr,[cdp, Dip05],'window min2=500 | pveltran v0=%d dv=10 nv=800 dip=${SOURCES[1]}'%V1)
+    # Flow(Vtk,Vtr, 'envelope | scale axis=2 | pick rect1=20 |  window min1=1.2 | remap1 pattern=$SOURCE order=2')
     #Flow(Dips0, Dip3, 'spray axis=3 n=250 d=0.0335 o=7.705')
     #Flow(Dips, [cdp, Dips0], 'dip idip=${SOURCES[1]} rect1=25 rect2=10 rect3=25')
     #Flow(hdip, Dips, 'window n4=1')
