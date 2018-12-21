@@ -159,7 +159,7 @@ V1= 1500.
 V2= 10000.
 Low_bound, High_bound = 84, 954
 Dead_CMP=[101,678,69]
-CdPs, NMO, pNMO, Vel_Picks, P_Vels, CdPs3, Sembs = [], [], [], [], [], [], []
+CdPs, NMO, pNMO, Vel_Picks, P_Vels, CdPs3, Sembs, Dmos = [], [], [], [], [], [], [], []
 for i in range(High_bound-Low_bound):
     cdp0 = 'CDP/cdp_%s'%i
     cdp1 = 'CDP/cdp_1_%s'%i
@@ -176,6 +176,7 @@ for i in range(High_bound-Low_bound):
     nmo0 = 'Nmo/Nmo_%s'%i
     nmo1 = 'Nmo/Nmo_1_%s'%i
     nmo2 = 'Nmo/Nmo_2_%s'%i
+    dmo2 = 'DMO/Dmo_2_%s'%i
     # vdip0 = 'Vdip/Vdip_%s'%i
     # vdip1 = 'Vdip/Vdip_1_%s'%i
     # vdip2 = 'Vdip/Vdip_2_%s'%i
@@ -209,6 +210,7 @@ for i in range(High_bound-Low_bound):
     # pNMO.append(Pnmo)
     Vel_Picks.append(vpick2)
     Sembs.append(Sembl2)
+    Dmos.append(dmo2)
     # P_Vels.append(PVel)
     Flow(cdp0, 'CDP_R_W8ted/CdP4_%s'%(i), 'bandpass flo=10 | pow pow1=2')
     # Plot(cdp,  'grey')
@@ -226,7 +228,8 @@ for i in range(High_bound-Low_bound):
     Flow(Sembl2, cdp2, 'vscan semblance=y v0=%d dv=20 nv=400 half=y'%V1)
     Flow(vpick2, Sembl2, 'envelope | scale axis=2 | pick rect1=40 | remap1 pattern=$SOURCE order=2 | window')
     Flow(nmo2, [cdp2, vpick2],'nmo velocity=${SOURCES[1]} half=y | despike2 wide1=3 wide2=5')
-    Flow(cdp3, [nmo2, vpick2], 'inmo velocity=${SOURCES[1]} half=y')
+    Flow(dmo2, nmo2, 'transp plane=23 | dmo velhalf=3000 half=y | transp plane=23 ')
+    Flow(cdp3, [dmo2, vpick2], 'inmo velocity=${SOURCES[1]} half=y')
     # Plot(nmo, nmo, 'sfgrey color=i scalebar=y title="standard nmo"')
     # Flow(Dip0,cdp,dip(1./V1-1./V2))
     # Flow(Dip1,cdp,dip(1./V2))
@@ -250,9 +253,9 @@ Flow('RSF/Vel_Picks', Vel_Picks, 'rcat ${SOURCES[1:-1]} axis=2')
 # Flow('RSF/Filt_NMO', NMO_Sp, 'rcat ${SOURCES[1:-1]} axis=2')
 Flow('RSF/NMO_Stack','RSF/NMO', 'stack axis=2' )
 Flow('RSF/Semblances', Sembs, 'rcat ${SOURCES[1:-1]} axis=3')
-
+Flow('RSF/DMO', Dmos, 'rcat ${SOURCES[1:-1]} axis=3')
+Flow('RSF/DMO_Stack','RSF/DMO', 'stack axis=2' )
 # Flow('RSF/pNMO_Stack','RSF/pNMO', 'stack axis=2' )
-# Flow('RSF/Filt_NMO_Stack','RSF/Filt_NMO', 'stack axis=2')
 ### NaN in the Velocity
 Flow('RSF/Vel_Picks_Stack','RSF/Vel_Picks', 'clip2 lower=2000 upper=8000 |stack axis=2' )
 Result('Stack/NMO_Stack', 'RSF/NMO_Stack', 'agc rect=20 | grey color=seismic scalebar=y maxval=8 minval=-8 title="nmo Brute Stack", vppen=')
