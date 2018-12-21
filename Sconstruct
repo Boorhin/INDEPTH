@@ -144,77 +144,99 @@ MaxAlt = 4573599
 
 ###################Import regularized CdPs  ##########################
 #######################################################################
-for C in range(870):
-    Flow('CDP_R_W8ted/CdP4_%s'%C, 'CDP_R_W8ted/New_CDP_%s.dat'%C, 'sfcsv2rsf | sftransp | put d1=0.004 label1="Time", unit1="s" d2=50 label2="shot" unit2="m"| window f2=4 n2=70')
+# for C in range(870):
+#     Flow('CDP_R_W8ted/CdP4_%s'%C, 'CDP_R_W8ted/New_CDP_%s.dat'%C, 'sfcsv2rsf | sftransp | put d1=0.004 label1="Time", unit1="s" d2=50 label2="shot" unit2="m"| window f2=4 n2=70')
 
 # Flow('RSF/CdP3t', 'RSF/CdP3', 'transp plane=23 | transp plane 13 | put d1=0.004 label1="Time" unit1="s" d2=25 label2="Offset" unit2="m" d3=25 label3="CdP" unit3="m" o3=%s'%Low_bound)
 # Flow('RSF/CdP2',[Masked_Line, 'New_Head'], 'sfintbin axis=n2 head=${SOURCES[1]} xkey=1 ykey=2 mask="Utils/CDP2_mask.rsf" map="Utils/CDP2_map.rsf"| sfput d3=25 d2=25 label3="CDP" label2="Offset" unit2="m" unit3="m"')
 #Flow('RSF/Brute_Stack', 'RSF/CdP3t', 'stack axis=2')
 
 ####################### Process CdP #####################################
+##### http://www.ahay.org/RSF/book/tccs/nmodeblend/paper_html/paper.html
+### The scan could be done as a cube, better?
 #########################################################################
 V1= 1500.
 V2= 10000.
 Low_bound, High_bound = 84, 954
 Dead_CMP=[101,678,69]
-CdPs, NMO, pNMO, Vel_Picks, NMO_Sp, P_Vels = [], [], [], [], [], []
+CdPs, NMO, pNMO, Vel_Picks, P_Vels, CdPs3, Sembs = [], [], [], [], [], [], []
 for i in range(High_bound-Low_bound):
-    cdp = 'CDP/cdp_%s'%i
+    cdp0 = 'CDP/cdp_%s'%i
+    cdp1 = 'CDP/cdp_1_%s'%i
+    cdp2 = 'CDP/cdp_2_%s'%i
+    cdp3 = 'CDP/cdp_3_%s'%i
     cdp_mask = 'CDP_Mask/cdp_Mask_%s'%i
-    NMO_Spike = 'NMO/NMO_Spike_%s'%i
     Compare_Filt ='Compare/filt_%s'%i
-    Sembl = 'Sembl/Sembl_%s'%i
-    vpick = 'Vpick/Vpick_%s'%i
-    nmo = 'Nmo/Nmo_%s'%i
-    vdip = 'Vdip/Vdip_%s'%i
-    vseis = 'Vseis/Vseis_%s'%i
-    Freq= 'Freq/Freq%s'%i
-    Fmask = 'FMask/FMask_%s'%i
-    Fmask2='FMask2/FMask2_%s'%i
-    CdP2 = 'Cdp2/Cdp2_%s'%i
-    Exp = 'Exp/Exp_%s_'%i
-    CdP_Ndip = 'CdP_Ndip/CdP_Ndip_%s'%i
-    CdP_Sdip = 'CdP_Sdip/CdP_Sdip_%s'%i
-    Cl_cdp = 'Cl_cdp/Cl_cdp_%s'%i
-    Dip0 = 'Dip0/Dip0_%s'%i
-    Dip1 = 'Dip1/Dip1_%s'%i
-    Dip2 = 'Dip2/Dip2_%s'%i
-    Dip3 = 'Dip3/Dip3_%s'%i
-    Dip05= 'Dip05/Dip05_%s'%i
-    Vtr = 'Vtr/Vtr_%s'%i
-    Vtk = 'Vtk/Vtk_%s'%i
-    Pnmo = 'Pnmo/Pnmo_%s'%i
-    PVel = 'PVel/PVel_%s'%i
-    Pplot = 'Pplot/Pplot_%s'%i
-    Dips0 = 'Dips0/Dips0_%s'%i
-    Dips = 'Dips/Dips_%s'%i
-    xdip = 'Xdip/Xdip_%s'%i
-    hdip = 'Hdip/hdip_%s'%i
-    mig = 'MigS/MigS_%s'%i
-    CdPs.append(cdp)
-    NMO.append(nmo)
-    pNMO.append(Pnmo)
-    Vel_Picks.append(vpick)
-    NMO_Sp.append(NMO_Spike)
-    P_Vels.append(PVel)
-    Flow(cdp, 'CDP_R_W8ted/CdP4_%s'%(i), 'bandpass flo=10 | pow pow1=2')
-    Plot(cdp,  'grey')
-    Flow(Sembl, cdp, 'vscan semblance=y v0=%d dv=20 nv=400 half=y'%V1)
-    Result(Sembl, Sembl,'envelope | grey color=j scalebar=y')
-    Flow(vpick, Sembl, 'scale axis=2 | pick rect1=40 | window')
-    Plot(vpick,vpick, 'graph title="semblance velocity" transp=y')
-    Flow(vdip,vpick,'v2d n=128 d=20 o=0 mute=y half=y v0=10000 t0=0.004 tp=0.1')
-    Flow(nmo, [cdp, vpick],'nmo velocity=${SOURCES[1]} half=y | window n2=62')
-    Plot(nmo, nmo, 'sfgrey color=i scalebar=y title="standard nmo"')
-    Flow(Dip0,cdp,dip(1./V1-1./V2))
-    Flow(Dip1,cdp,dip(1./V2))
-    Flow(Dip2,[cdp, Dip0, Dip1],'nmostretch half=y v0=%s | twodip2 dip1=${SOURCES[1]} q0=0 order=3 niter=10 eps=200 lam=40 | window n3=1 | math ref=${SOURCES[2]} output="input+ref" '%V1)
-    Flow(Dip3, [cdp,Dip2], 'dip idip=${SOURCES[1]} order=3 niter=10 liter=100 rect=50 rect2=20 pmin=0')
-    Flow([Pnmo,PVel], [cdp, Dip3], 'pnmo dip=${SOURCES[1]} vel=${TARGETS[1]}')
-    Plot(Pnmo, Pnmo, 'sfgrey color=i scalebar=y title="slope nmo"')
-    Plot(PVel, PVel, 'graph title="slope velocity" transp=y')
-    Result(Pplot,[Pnmo, nmo], 'SideBySideAniso')
-    Flow(Dip05,Dip3,'window min2=500 | despike2 wide1=7 wide2=7')
+    Sembl0 = 'Sembl/Sembl_%s'%i
+    Sembl1 = 'Sembl/Sembl_1_%s'%i
+    Sembl2 = 'Sembl/Sembl_2_%s'%i
+    vpick0 = 'Vpick/Vpick_%s'%i
+    vpick1 = 'Vpick/Vpick_1_%s'%i
+    vpick2 = 'Vpick/Vpick_2_%s'%i
+    nmo0 = 'Nmo/Nmo_%s'%i
+    nmo1 = 'Nmo/Nmo_1_%s'%i
+    nmo2 = 'Nmo/Nmo_2_%s'%i
+    # vdip0 = 'Vdip/Vdip_%s'%i
+    # vdip1 = 'Vdip/Vdip_1_%s'%i
+    # vdip2 = 'Vdip/Vdip_2_%s'%i
+    # vseis = 'Vseis/Vseis_%s'%i
+    # Freq= 'Freq/Freq%s'%i
+    # Fmask = 'FMask/FMask_%s'%i
+    # Fmask2='FMask2/FMask2_%s'%i
+    # CdP2 = 'Cdp2/Cdp2_%s'%i
+    # Exp = 'Exp/Exp_%s_'%i
+    # CdP_Ndip = 'CdP_Ndip/CdP_Ndip_%s'%i
+    # CdP_Sdip = 'CdP_Sdip/CdP_Sdip_%s'%i
+    # Cl_cdp = 'Cl_cdp/Cl_cdp_%s'%i
+    # Dip0 = 'Dip0/Dip0_%s'%i
+    # Dip1 = 'Dip1/Dip1_%s'%i
+    # Dip2 = 'Dip2/Dip2_%s'%i
+    # Dip3 = 'Dip3/Dip3_%s'%i
+    # Dip05= 'Dip05/Dip05_%s'%i
+    # Vtr = 'Vtr/Vtr_%s'%i
+    # Vtk = 'Vtk/Vtk_%s'%i
+    # Pnmo = 'Pnmo/Pnmo_%s'%i
+    # PVel = 'PVel/PVel_%s'%i
+    # Pplot = 'Pplot/Pplot_%s'%i
+    # Dips0 = 'Dips0/Dips0_%s'%i
+    # Dips = 'Dips/Dips_%s'%i
+    # xdip = 'Xdip/Xdip_%s'%i
+    # hdip = 'Hdip/hdip_%s'%i
+    # mig = 'MigS/MigS_%s'%i
+    # CdPs.append(cdp)
+    NMO.append(nmo2)
+    CdPs3.append(cdp3)
+    # pNMO.append(Pnmo)
+    Vel_Picks.append(vpick2)
+    Sembs.append(Sembl2)
+    # P_Vels.append(PVel)
+    Flow(cdp0, 'CDP_R_W8ted/CdP4_%s'%(i), 'bandpass flo=10 | pow pow1=2')
+    # Plot(cdp,  'grey')
+    Flow(Sembl0, cdp0, 'vscan semblance=y v0=%d dv=20 nv=400 half=y'%V1)
+    Result(Sembl2, Sembl2,'envelope | grey color=j scalebar=y')
+    Flow(vpick0, Sembl0, 'envelope | scale axis=2 | pick rect1=40 | remap1 pattern=$SOURCE order=2 | window')
+    # Plot(vpick,vpick, 'graph title="semblance velocity" transp=y')
+    # Flow(vdip0,vpick0,'v2d n=128 d=20 o=0 mute=y half=y v0=10000 t0=0.004 tp=0.1')
+    Flow(nmo0, [cdp0, vpick0],'nmo velocity=${SOURCES[1]} half=y | despike2 wide1=3 wide2=5')
+    Flow(cdp1, [nmo0, vpick0], 'inmo velocity=${SOURCES[1]} half=y')
+    Flow(Sembl1, cdp1, 'vscan semblance=y v0=%d dv=20 nv=400 half=y'%V1)
+    Flow(vpick1, Sembl1, 'envelope | scale axis=2 | pick rect1=40 | remap1 pattern=$SOURCE order=2 | window')
+    Flow(nmo1, [cdp1, vpick1],'nmo velocity=${SOURCES[1]} half=y | despike2 wide1=3 wide2=5')
+    Flow(cdp2, [nmo1, vpick1], 'inmo velocity=${SOURCES[1]} half=y')
+    Flow(Sembl2, cdp2, 'vscan semblance=y v0=%d dv=20 nv=400 half=y'%V1)
+    Flow(vpick2, Sembl2, 'envelope | scale axis=2 | pick rect1=40 | remap1 pattern=$SOURCE order=2 | window')
+    Flow(nmo2, [cdp2, vpick2],'nmo velocity=${SOURCES[1]} half=y | despike2 wide1=3 wide2=5')
+    Flow(cdp3, [nmo2, vpick2], 'inmo velocity=${SOURCES[1]} half=y')
+    # Plot(nmo, nmo, 'sfgrey color=i scalebar=y title="standard nmo"')
+    # Flow(Dip0,cdp,dip(1./V1-1./V2))
+    # Flow(Dip1,cdp,dip(1./V2))
+    # Flow(Dip2,[cdp, Dip0, Dip1],'nmostretch half=y v0=%s | twodip2 dip1=${SOURCES[1]} q0=0 order=3 niter=10 eps=200 lam=40 | window n3=1 | math ref=${SOURCES[2]} output="input+ref" '%V1)
+    # Flow(Dip3, [cdp,Dip2], 'dip idip=${SOURCES[1]} order=3 niter=10 liter=100 rect=50 rect2=20 pmin=0')
+    # Flow([Pnmo,PVel], [cdp, Dip3], 'pnmo dip=${SOURCES[1]} vel=${TARGETS[1]}')
+    # Plot(Pnmo, Pnmo, 'sfgrey color=i scalebar=y title="slope nmo"')
+    # Plot(PVel, PVel, 'graph title="slope velocity" transp=y')
+    # Result(Pplot,[Pnmo, nmo], 'SideBySideAniso')
+    # Flow(Dip05,Dip3,'window min2=500 | despike2 wide1=7 wide2=7')
     # Flow(Vtr,[cdp, Dip05],'window min2=500 | pveltran v0=%d dv=10 nv=800 dip=${SOURCES[1]}'%V1)
     # Flow(Vtk,Vtr, 'envelope | scale axis=2 | pick rect1=20 |  window min1=1.2 | remap1 pattern=$SOURCE order=2')
     #Flow(Dips0, Dip3, 'spray axis=3 n=250 d=0.0335 o=7.705')
@@ -223,23 +245,33 @@ for i in range(High_bound-Low_bound):
     #Flow(xdip, Dips, 'window f4=1')
     #Flow(mig, [cdp, hdip, xdip], 'pmig hdip=${SOURCES[1]} xdip=${SOURCES[2]}' )
 Flow('RSF/NMO', NMO, 'rcat ${SOURCES[1:-1]} axis=3')
-Flow('RSF/pNMO', pNMO, 'rcat ${SOURCES[1:-1]} axis=3')
+# Flow('RSF/pNMO', pNMO, 'rcat ${SOURCES[1:-1]} axis=3')
 Flow('RSF/Vel_Picks', Vel_Picks, 'rcat ${SOURCES[1:-1]} axis=2')
 # Flow('RSF/Filt_NMO', NMO_Sp, 'rcat ${SOURCES[1:-1]} axis=2')
 Flow('RSF/NMO_Stack','RSF/NMO', 'stack axis=2' )
-Flow('RSF/pNMO_Stack','RSF/pNMO', 'stack axis=2' )
+Flow('RSF/Semblances', Sembs, 'rcat ${SOURCES[1:-1]} axis=3')
+
+# Flow('RSF/pNMO_Stack','RSF/pNMO', 'stack axis=2' )
 # Flow('RSF/Filt_NMO_Stack','RSF/Filt_NMO', 'stack axis=2')
 ### NaN in the Velocity
 Flow('RSF/Vel_Picks_Stack','RSF/Vel_Picks', 'clip2 lower=2000 upper=8000 |stack axis=2' )
 Result('Stack/NMO_Stack', 'RSF/NMO_Stack', 'agc rect=20 | grey color=seismic scalebar=y maxval=8 minval=-8 title="nmo Brute Stack", vppen=')
 Flow('Fig/Compare/NMO_Stackp', 'RSF/NMO_Stack', 'prep4plot inp=${SOURCE} out={TARGET} ppi=300')
 # Result('Stack/Filt_NMO_Stack', 'RSF/Filt_NMO_Stack', 'agc rect=20 | grey color=seismic scalebar=y maxval=8 minval=-8 title="Filtered_nmo Brute Stack" ppi=300')
-Result('Stack/pNMO_Stack', 'RSF/pNMO_Stack', 'despike2 wide1=2 wide2=3 | agc rect1=6000 rect2=50 | grey pclip=95 color=seismic scalebar=y maxval=8 minval=-8 title="slope nmo Brute Stack" ppi=300')
+# Result('Stack/pNMO_Stack', 'RSF/pNMO_Stack', 'despike2 wide1=2 wide2=3 | agc rect1=6000 rect2=50 | grey pclip=95 color=seismic scalebar=y maxval=8 minval=-8 title="slope nmo Brute Stack" ppi=300')
 Plot('RSF/Vel_Picks_Stack','RSF/Vel_Picks_Stack', 'window n2=1 | graph title="velocity function" transp=y')
 Result('RSF/Vel_Picks', 'RSF/Vel_Picks', 'clip2 lower=2000 upper=8000 | despike wide1=100 wide2=50 | sfagc rect1=6500 rect2=200 | put d2=100 label2="CdP" unit2="m"  | grey color=x scalebar=y polarity=y title="NMO Velocity picks"')
 Result('Stack/Vel_Picks_Stack', ['RSF/Vel_Picks_Stack','RSF/Vel_Picks'], 'SideBySideAniso' )
 
-# Result('PCDP', 'CDPs', 'grey3 pclip=99.9 title="CDPs" flat=y movie=3')
+###### Common-offset domain prestack kirchhoff time migration (PSTM)######
+############################################################################
+Flow('RSF/Pick_Semblance', ['RSF/Semblances','RSF/Vel_Picks'], 'slice pick=${SOURCES[1]}')
+Flow('RSF/IntVel',['RSF/Vel_Picks','RSF/Pick_Semblance' ], 'dix weight=${SOURCES[1]} rect1=100 rect2=10')
+Flow('RSF/CdPs3', CdPs3, 'rcat ${SOURCES[1:-1]} axis=3')
+Flow('RSF/CdPs3T','RSF/CdPs3', 'transp memsize=20000 plane=23')
+Flow('RSF/PSTM', ['RSF/CdPs3T','RSF/Vel_Picks'], 'mig2 vel=${SOURCES[1]} apt=5 antialias=1')
+Flow('RSF/PSTM_D', ['RSF/PSTM', 'RSF/IntVel'], 'time2depth velocity=${SOURCES[1]} intime=y nz=2000 dz=25')
+
 
 
 #########TODO#####
