@@ -2,6 +2,7 @@
 from rsf.proj import *
 import os, sys
 os.environ['SFPENOPTS'] = 'bgcolor=w'
+from rsf.recipes.velcon import velcon
 
 def twodip2(nj1,nj2,extra):
     return '''twodip2 order=3 nj1=%d nj2=%d eps=8 verb=n gauss=n''' % (nj1,nj2) + extra
@@ -219,12 +220,12 @@ for i in range(High_bound-Low_bound):
     Flow(cdp1, [nmo0, vpick0], 'inmo velocity=${SOURCES[1]} half=y')
     Flow(Sembl1, cdp1, 'vscan semblance=y v0=%d dv=20 nv=400 half=y'%V1)
     Flow(vpick1, Sembl1, 'envelope | scale axis=2 | pick rect1=40 | remap1 pattern=$SOURCE order=2 | window')
-    Flow(nmo1, [cdp1, vpick1],'nmo velocity=${SOURCES[1]} half=y | despike2 wide1=3 wide2=5')
+    Flow(nmo1, [cdp1, vpick1],'nmo velocity=${SOURCES[1]} half=y | despike2 wide1=3 wide2=3')
     Flow(cdp2, [nmo1, vpick1], 'inmo velocity=${SOURCES[1]} half=y')
     Flow(Sembl2, cdp2, 'vscan semblance=y str=0.01 v0=%d dv=20 nv=400 half=y'%V1)
     Flow(vpick2, Sembl2, 'envelope | scale axis=2 | pick rect1=40 | remap1 pattern=$SOURCE order=2 | sfsmooth rect1=200 repeat=5| window')
     Flow(vint, vpick2, 'smooth rect1=200 repeat=5 |dix rect1=100')
-    Flow(nmo2, [cdp2, vpick2],'nmo velocity=${SOURCES[1]} half=y | despike2 wide1=3 wide2=5')
+    Flow(nmo2, [cdp2, vpick2],'nmo velocity=${SOURCES[1]} half=y | despike2 wide1=3 wide2=3')
 #    Flow(dmo2, nmo2, 'transp plane=23 | dmo velhalf=3500 half=y | transp plane=23 | sfdespike2 wide1=3 wide2=3')
     Flow(cdp3, [nmo2, vpick2], 'inmo velocity=${SOURCES[1]} half=y')
     # Plot(nmo, nmo, 'sfgrey color=i scalebar=y title="standard nmo"')
@@ -265,12 +266,29 @@ Result('Stack/Vel_Picks_Stack', ['RSF/Vel_Picks_Stack','RSF/Vel_Picks'], 'SideBy
 
 ###### Common-offset domain prestack kirchhoff time migration (PSTM)######
 ############################################################################
+# velcon('RSF/CdPs3a',
+#        nv=120,      # continuation steps
+#        v0=1500,     # initial velocity
+#        dv=25,       # velocity step
+#        nx=870,     # lateral dimension
+#        nh=70,      # number of offsets
+#        padt=1024,   # time padding
+#        padt2=4096,  # extra time padding
+#        padx=1025,   # lateral padding
+#        dx=100,  # lateral sampling
+#        v1=3500,     # other velocity
+#        vx0=2000,    # semblance muting
+#        vslope=1200, # semblance muting
+#        units='m',   # lateral units
+#        rect1=70,
+#        rect2=70)
 Flow('RSF/Pick_Semblance', ['RSF/Semblances','RSF/Vel_Picks'], 'slice pick=${SOURCES[1]}')
 # Flow('RSF/IntVel',['RSF/Vel_Picks','RSF/Pick_Semblance' ], 'dix weight=${SOURCES[1]} rect1=100 rect2=100')
 Flow('RSF/IntVel', VI, 'rcat ${SOURCES[1:-1]} axis=3')
 Flow('RSF/CdPs3', CdPs3, 'rcat ${SOURCES[1:-1]} axis=3')
-Flow('RSF/CdPs3T','RSF/CdPs3', 'transp memsize=20000 plane=23')
-Flow('RSF/PSTM', ['RSF/CdPs3T','RSF/Vel_Picks'], 'mig2 vel=${SOURCES[1]} apt=50 antialias=5')
+Flow('RSF/CdPs3a','RSF/CdPs3', 'put label2="CdP" d3=25 o3=%s label3="Offset" unit3=m'%Low_bound )
+Flow('RSF/CdPs3T','RSF/CdPs3a', 'transp memsize=20000 plane=23')
+#Flow('RSF/PSTM', ['RSF/CdPs3T','RSF/Vel_Picks'], 'mig2 vel=${SOURCES[1]} apt=50 antialias=5')
 # Flow('RSF/PSTM_D', ['RSF/PSTM', 'RSF/IntVel'], 'time2depth velocity=${SOURCES[1]} intime=y nz=2000 dz=25')
 
 
@@ -278,6 +296,12 @@ Flow('RSF/PSTM', ['RSF/CdPs3T','RSF/Vel_Picks'], 'mig2 vel=${SOURCES[1]} apt=50 
 #########TODO#####
  ###statics###
 #Vo=in header
+# Compare spectra
+# <RSF/PSTM.rsf sfspectra all=y | sfscale axis=1 | sfdots | sfpen
+# <RSF/TIB01.rsf sfspectra all=y | sfscale axis=1 | sfdots | sfpen
+# Plot('spectra',['specTIB1','specPSTM'], 'cat axis=2 ${SOURCES[1]} | dots labels="recon:model" label1=Frequency dots=0 labelsz=10 titlesz=12')
+#Velocity continuation
+# <RSF/PSTM.rsf sfpad beg2=100 end2=100 | sfvelcon vel=1.5 adj=n | sfwindow f2=100 n2=870
 
 
 
