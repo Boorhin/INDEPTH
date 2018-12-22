@@ -7,17 +7,27 @@ dx, dy= 10, 10
 data = np.genfromtxt('/media/julien/NuDrive/Himalayas/Tomo.txt', names=True)
 ### capture topo
 TopX, TopY,TopV =[data['Distance'][0]],[data['Z'][0]],[data['VP'][0]]
-for i in range(1,len(data)):
-    if data['Distance'][i] !=  data['Distance'][i-1]:
-        TopX.append(data['Distance'][i])
-        TopY.append(data['Z'][i])
-        TopV.append(data['VP'][i])
+i = 1
+while i < len(data):
+    if data['Distance'][i] ==  data['Distance'][i-1]:
+        i+=1
+    else:
+        if  data['VP'][i] <0:
+            i+=1
+        else:
+            TopX.append(data['Distance'][i])
+            TopY.append(data['Z'][i])
+            TopV.append(data['VP'][i])
+            i+=1
 # ####Compute distance stretch
 # TopX, TopY,TopV =np.array(TopX),np.array(TopY),np.array(TopV)
 # d= ((TopX[1:]-TopX[:-1])**2+(TopY[1:]-TopY[:-1])**2)**.5
 Vo= 1794 #mean Static Velocity
 
-
+#Map Velocity on CMP
+def closest_node(pt, line):
+    dist_2 = np.sum((line-pt)**2, axis=1)
+    return np.argmin(dist_2)
 
 
 
