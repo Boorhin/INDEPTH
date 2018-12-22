@@ -38,6 +38,25 @@ def Interpolate(X, Y, Z, Bin, deg, S):
     Spl_Z = Z_Spline(New_D)
     return X_Spline, Y_Spline, Z_Spline, Spl_X, Spl_Y, Spl_Z
 
+def IntVelTrack(Xs, Ys, Zs, Bin, deg):
+    ''' Interpolate a 3D spline according to distance between points
+    But bin on the 2 first axis only (X depth Velocity)'''
+    Do,Ds = np.zeros(len(Xs)), np.zeros(len(Xs))
+    Do[1:] += (Xs[1:] - Xs[:-1])**2
+    Do[1:] += (Ys[1:] - Ys[:-1])**2
+    Ds[1:] += Do[1:] + (Zs[1:] - Zs[:-1])**2
+    Ds = Ds**0.5
+    Ds = Ds.cumsum()
+    Do = Do**0.5
+    Do = Do.cumsum()
+    X_Spline = SC.UnivariateSpline( Ds, Xs, k=deg)
+    Y_Spline = SC.UnivariateSpline( Ds, Ys, k=deg)
+    Z_Spline = SC.UnivariateSpline( Ds, Zs, k=deg)
+    Nbin = int(Ds[-1]//(Do[-1]//Bin))
+    New_D = np.arange(Ds[0], Ds[-1], Nbin)
+    Spl_X,Spl_Y, Spl_Z  = X_Spline(New_D), Y_Spline(New_D), Z_Spline(New_D)
+    return Spl_X, Spl_Y, Spl_Z
+
 def getData (Dir, File, Header):
     F = m8r.Input(Dir+os.sep+File)
     TrH = m8r.Input(Dir+os.sep+Header)
@@ -190,44 +209,44 @@ def closest_node(pt, line):
     dist_2 = np.sum((line-pt)**2, axis=1)
     return np.argmin(dist_2)
 
-def Calc_CMP(TraceH, CoX, CoY):
-    '''make CMPs arrays tr X, Y, Z
-    Construct a pointer between shortest binned curve and each CMP, extract fold'''
-    ScZ, ScX = abs(TraceH[:,19,:]), abs(TraceH[:,20,:])
-    XS= TraceH[:,21,:]/ScX+CoX
-    YS= TraceH[:,22,:]/ScX+CoY
-    ZS= TraceH[:,13,:]/ScZ
-    Xr, Yr, Zr    = TraceH[:,23,:]/ScX+CoX, TraceH[:,24,:]/ScX+CoY, TraceH[:,12,:]/ScZ
-    CMPo, CMPm, CMPe = np.zeros((len(XS),4)), np.zeros((len(XS),4)),np.zeros((len(XS),4))
+# def Calc_CMP(TraceH, CoX, CoY):
+#     '''make CMPs arrays tr X, Y, Z
+#     Construct a pointer between shortest binned curve and each CMP, extract fold'''
+#     ScZ, ScX = abs(TraceH[:,19,:]), abs(TraceH[:,20,:])
+#     XS= TraceH[:,21,:]/ScX+CoX
+#     YS= TraceH[:,22,:]/ScX+CoY
+#     ZS= TraceH[:,13,:]/ScZ
+#     Xr, Yr, Zr    = TraceH[:,23,:]/ScX+CoX, TraceH[:,24,:]/ScX+CoY, TraceH[:,12,:]/ScZ
+#     CMPo, CMPm, CMPe = np.zeros((len(XS),4)), np.zeros((len(XS),4)),np.zeros((len(XS),4))
+#
+#     for o in range(len(TraceH)):
+#             CMPo[o], CMPm[o], CMPe[o] = [o, (Xr[o,0]+XS[o,0])/2, (Yr[o,0]+YS[o,0])/2, (Zr[o,0]+ZS[o,0])/2], \
+#                                         [o, (Xr[o,60]+XS[o,60])/2, (Yr[o,60]+YS[o,60])/2, (Zr[o,60]+ZS[o,60])/2], \
+#                                         [o, (Xr[o,119]+XS[o,119])/2, (Yr[o,119]+YS[o,119])/2, (Zr[o,119]+ZS[o,119])/2]
+#             for i in range(Receivers):
+#                 CMPs[o*Receivers+i,0], CMPs[o*Receivers+i,1], CMPs[o*Receivers+i,2], CMPs[o*Receivers+i,3] = o*Receivers+i, (Xr[o,i]+XS[o,i])/2, (Yr[o,i]+YS[o,i])/2, (Zr[o,i]+ZS[o,i])/2
+#
+#     ### Prepare spline:
+#     xyz = np.unique(np.ma.compress_rowcols(np.ma.masked_invalid(CMPm[:,1:]), axis = 0), axis=0)
+#     xyz = xyz[xyz[:,1].argsort()] #sorting to compensate for weird sorting from np.unique
+#     ### calculate spline to make binning notice subsampling and intense smoothing
+#     X_Spline, Y_Spline, Z_Spline, Spl_X, Spl_Y, Spl_Z = Interpolate(xyz[:,0][::6], xyz[:,1][::6], xyz[:,2][::6], Bin=25, deg=2, S=3000)
+#         #PlotCoord(Spl_X, Spl_Y, Spl_Z)
+#     Pointer = np.ones(len(CMPs), dtype=np.int)*-1 # contains index of nearest Spline node
+#     Spline= np.zeros((len(Spl_X),3))
+#     Spline[:,0], Spline[:,1], Spline[:,2] = Spl_X, Spl_Y, Spl_Z
+#     for a in range(len(CMPs)):
+#         if np.isfinite(CMPs[a, 1]):
+#             Pointer[a] = closest_node(CMPs[a,1:], Spline)
+#     Pointer = np.ma.masked_where(Pointer<0, Pointer)
+#     BinP, fold = np.unique(Pointer, return_counts=True)
+#     ### plot fold along line
+#     ##plt.plot(b[:-1], label='fold') #remove nans at the end
+#     ##plt.legend()
+#     ##plt.show()
+#     return Xr, Yr, Zr, CMPs, Spline, Pointer, BinP, fold[:-1]
 
-    for o in range(len(TraceH)):
-            CMPo[o], CMPm[o], CMPe[o] = [o, (Xr[o,0]+XS[o,0])/2, (Yr[o,0]+YS[o,0])/2, (Zr[o,0]+ZS[o,0])/2], \
-                                        [o, (Xr[o,60]+XS[o,60])/2, (Yr[o,60]+YS[o,60])/2, (Zr[o,60]+ZS[o,60])/2], \
-                                        [o, (Xr[o,119]+XS[o,119])/2, (Yr[o,119]+YS[o,119])/2, (Zr[o,119]+ZS[o,119])/2]
-            for i in range(Receivers):
-                CMPs[o*Receivers+i,0], CMPs[o*Receivers+i,1], CMPs[o*Receivers+i,2], CMPs[o*Receivers+i,3] = o*Receivers+i, (Xr[o,i]+XS[o,i])/2, (Yr[o,i]+YS[o,i])/2, (Zr[o,i]+ZS[o,i])/2
-
-    ### Prepare spline:
-    xyz = np.unique(np.ma.compress_rowcols(np.ma.masked_invalid(CMPm[:,1:]), axis = 0), axis=0)
-    xyz = xyz[xyz[:,1].argsort()] #sorting to compensate for weird sorting from np.unique
-    ### calculate spline to make binning notice subsampling and intense smoothing
-    X_Spline, Y_Spline, Z_Spline, Spl_X, Spl_Y, Spl_Z = Interpolate(xyz[:,0][::6], xyz[:,1][::6], xyz[:,2][::6], Bin=25, deg=3, S=3000)
-        #PlotCoord(Spl_X, Spl_Y, Spl_Z)
-    Pointer = np.ones(len(CMPs), dtype=np.int)*-1 # contains index of nearest Spline node
-    Spline= np.zeros((len(Spl_X),3))
-    Spline[:,0], Spline[:,1], Spline[:,2] = Spl_X, Spl_Y, Spl_Z
-    for a in range(len(CMPs)):
-        if np.isfinite(CMPs[a, 1]):
-            Pointer[a] = closest_node(CMPs[a,1:], Spline)
-    Pointer = np.ma.masked_where(Pointer<0, Pointer)
-    BinP, fold = np.unique(Pointer, return_counts=True)
-    ### plot fold along line
-    ##plt.plot(b[:-1], label='fold') #remove nans at the end
-    ##plt.legend()
-    ##plt.show()
-    return Xr, Yr, Zr, CMPs, Spline, Pointer, BinP, fold[:-1]
-
-def Calc_CMP2D(TraceH, CoX, CoY, CdP_Bin):
+def Calc_CMP2D(TraceH, CoX, CoY, CdP_Bin, deg):
     '''make CMPs arrays tr X, Y, Z
     Construct a pointer between shortest binned curve and each CMP, extract fold'''
     Tr=TraceH[:,0]
@@ -244,7 +263,10 @@ def Calc_CMP2D(TraceH, CoX, CoY, CdP_Bin):
     xyz = np.unique(CMPm[:,1:], axis=0)
     xyz = xyz[xyz[:,1].argsort()] #sorting to compensate for weird sorting from np.unique
     ### calculate spline to make binning notice subsampling and intense smoothing
-    X_Spline, Y_Spline, Z_Spline, Spl_X, Spl_Y, Spl_Z = Interpolate(xyz[:,0][::6], xyz[:,1][::6], xyz[:,2][::6], Bin=CdP_Bin, deg=3, S=3000)
+    m= xyz.var()
+    std =0.002
+    Sm=(m)*std**2
+    X_Spline, Y_Spline, Z_Spline, Spl_X, Spl_Y, Spl_Z = Interpolate(xyz[:,0][::6], xyz[:,1][::6], xyz[:,2][::6], Bin=CdP_Bin, deg=deg, S=Sm)
     Pointer = np.ones(len(CMPs), dtype=np.int)*-1 # contains index of nearest Spline node
     Spline= np.zeros((len(Spl_X),3))
     Spline[:,0], Spline[:,1], Spline[:,2] = Spl_X, Spl_Y, Spl_Z
@@ -355,7 +377,10 @@ TraceH, Cube  = np.zeros((Geom[0], Nh, Receivers)), np.zeros(Geom)
 #### Source and Receiver positions in real space, get CMPs etc
 CoX, CoY = 700000, 3000000  #Coordinate modifier
 TraceH=H[0].astype(np.float)
-Xr, Yr, Zr, CMPs, Spline, Pointer, BinP, fold = Calc_CMP2D(TraceH, CoX, CoY, CdP_Bin=100)
+Xr, Yr, Zr, CMPs, Spline, Pointer, BinP, fold = Calc_CMP2D(TraceH, CoX, CoY, CdP_Bin=100, deg=2)
+plt.scatter(CMPs[:,1],CMPs[:,2], marker='+')
+plt.plot(Spline[:,0], Spline[:,1], 'r')
+plt.show()
 
 ########### Create CMP Gather Geometry ###########
 Offsets = np.zeros(len(Pointer), dtype=np.int)
@@ -370,6 +395,43 @@ for i in range(len(Pointer)):
 # New_Head[2]=Pointer
 # np.savetxt('New_Head.dat',New_Head, delimiter=',')
 
+#### include diving wave topography residual velocity##############
+###################################################################
+Vels = np.genfromtxt('/media/julien/NuDrive/Himalayas/Tomo.txt', names=True)
+###################Extract Surface velocities######################
+TopX, TopY,TopV =[Vels['Distance'][0]],[Vels['Z'][0]],[Vels['VP'][0]]
+i = 1
+while i < len(data):
+    if Vels['Distance'][i] ==  Vels['Distance'][i-1]:
+        i+=1
+    else:
+        if  Vels['VP'][i] <0:
+            i+=1
+        else:
+            TopX.append(Vels['Distance'][i])
+            TopY.append(Vels['Z'][i])
+            TopV.append(Vels['VP'][i])
+            i+=1
+TopX, TopY,TopV =np.array(TopX),np.array(TopY),np.array(TopV)
+
+
+Vo= 1794. #mean hard coded Static Velocity
+TopSpl_X, TopSpl_Y, TopSpl_V= IntVelTrack(TopX, TopY,TopV, Bin=100, deg=2)
+Dspl=np.zeros(len(Spline), dtype =np.float)
+for i in range(3):
+    Dspl[1:] += (Spline[1:,i]-Spline[:-1,i])**2
+Dspl = Dspl**.5
+Dspl = Dspl.cumsum()
+Match=(len(TopSpl_X)-2*len(Dspl))//2
+
+Vel_st=np.array([TopSpl_V[Match+i] for i in range(len(Vel_st))]) ### Dirty!
+Delta=np.zeros(len(Dspl))
+Delta[1:]=Spline[1:,2]-Spline[:-1,2]
+Shifter=np.zeros(len(Dspl))
+Shifter= 2*Delta*(abs(Vel_st-Vo))/(Vo*Vel_st)
+Dsh = Shifter.min()
+Shifter -= Dsh
+np.savetxt(Dir+os.sep+'Vel_stack.dat', Shifter, delimiter=',')
 
 
 ########Interpolate Missing Data ##########
@@ -409,6 +471,12 @@ while n < len(Stacks):
             break
     Cube[:,Stacks[n][0], Stacks[n][1]] /= S
     n += S-1
+
+
+# ####Compute distance stretch
+# TopX, TopY,TopV =np.array(TopX),np.array(TopY),np.array(TopV)
+# d= ((TopX[1:]-TopX[:-1])**2+(TopY[1:]-TopY[:-1])**2)**.5
+
 
 ####### interpolate traces #####
 ###### CubeI.npy save ##########
