@@ -2,11 +2,8 @@ from multiprocessing import Pool
 import os, sys
 import numpy as np
 
-class ClassName(object):
-    """docstring for ."""
-    def __init__(self, arg):
-        super(, self).__init__()
-        self.arg = arg
+vars=(xi, yi, zi, Dir, Cube)
+retur = CubeII
 
 def Fill_CdP((Dir, Data_Slice, masker, MESHZ, MESHX, xi, zi, o)):
     '''Interpolate discrete values at constant CdP
@@ -40,7 +37,6 @@ def SaveCDP((i, CdP)):
 
 MESHZ, MESHX = np.meshgrid(zi, xi)
 DirCdP = Dir[:-3]+'CdP_filt'
-main()
 if __name__ == '__main__':
     pool = Pool(12)
     pool.map(Fill_CdP, [(DirCdP, Cube[:,:,o], masker, MESHZ, MESHX, xi, zi, o) for o in range(len(yi))])
