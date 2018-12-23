@@ -128,8 +128,9 @@ def Fill_CdP((Dir, Data_Slice, masker, MESHZ, MESHX, xi, zi, o)):
         Z, X = np.where(CdP_mask>0.1)
         Coords = np.vstack((zi[Z],xi[X])).T
         CdP=SC.griddata(Coords,Data_Slice[Z, X], (MESHZ, MESHX), method='linear', fill_value=0).T
-        np.save(FileName, CdP)
-    return
+        np.save(FileName, CdP.T)
+        print 'Interpolated '+ FileName
+    return CdP
 
 def Fill_MO((Dir, Data_Slice, masker, Meshz, Meshy, zi, yi, s)):
     '''Interpolate discrete values at constant Offset
@@ -141,8 +142,9 @@ def Fill_MO((Dir, Data_Slice, masker, Meshz, Meshy, zi, yi, s)):
         Z, Y = np.where(MO_mask>0.1)
         Coords = np.vstack((zi[Z],yi[Y])).T
         MO=SC.griddata(Coords,Data_Slice[Z, Y], (Meshz, Meshy), method='linear', fill_value=0).T
-        np.save(FileName, MO)
-    return
+        np.save(FileName, MO.T)
+        print 'Interpolated '+ FileName
+    return MO
 
 def SaveCDP((i, CdP)):
     np.savetxt('CDP_R_W8ted/New_CDP_'+str(i)+'.dat', CdP.T, delimiter=',')
@@ -225,160 +227,173 @@ np.savetxt(Dir+os.sep+'Tr_Velocity.dat', Vel_tr, delimiter=',')
 
 
 
-######################## DATA LOADING ################################
-########################################################################
-Flow('RSF/TIB01 RSF/TIB01_T RSF/TIB01_H RSF/TIB01_B', 'TIB01.sgy','segyread tape="$SOURCE" tfile=${TARGETS[1]} hfile=${TARGETS[2]} bfile=${TARGETS[3]}',stdin=0 )
-#### Static corrections
-Flow('Utils/Tr_Velocity', 'RSF/Tr_Velocity.dat', 'sfcsv2rsf | transp | dd type=int')
-Flow('RSF/TIB01_Ts', ['RSF/TIB01_T', 'Utils/Tr_Velocity'], 'headermath key=unknown x1="${SOURCES[1]}" output=x1')
-Flow('Utils/Statics', 'RSF/TIB01_Ts','headermath output="2*((-1*(%s-selev)/scalel)+(gelev-selev)/scalel)/unknown" '%MaxAlt )
-Flow('RSF/TIB01_S', ['RSF/TIB01', 'Utils/Statics'], 'stretch rule=d datum=${SOURCES[1]} ')
-Flow('RSF/Cube', 'RSF/TIB01_S', 'sfintbin axis=n2 xk=tracf yk=fldr mask="Utils/Cube_mask.rsf" map="Utils/Cube_map.rsf"')
-Flow('Utils/Shot_Mask','', 'spike n1=120 mag=0 | dd type=int')
-
-######## Remove Ground Roll in shot receiver space by rotating ########
-############  then dip-filter the low velocity component ##############
-########  and trashing the low frequency, back rotating after #########
-############# Plane-wave destruction method from Fomel ################
-NaNShots = [3, 4, 14, 108, 157, 171, 254, 257, 302]
-DeadShots =[0, 5, 6, 27, 28, 40, 41, 50, 51, 55, 77, 78, 90, 110, 112, 115, 116, 124, 125, 141, 158, 159, 177, 192, 208, 209, 226, 241, 244, 306, 307, 318, 319, 325, 326, 344, 345, 358, 359, 364, 383, 384, 405, 406, 428, 428, 440, 441]
-All, MaskedShots = [], []
-
-
-for i in range(456):
-    Shot ='Shots/Shot_'+str(i)
-    Trace ='Trace/Trace_'+str(i)
-    tilted ='tilted/tilted%s'%i
-    noiz ='noiz/noiz%s'%i
-    sign ='sign/sign%s'%i
-    mask ='mask/mask%s'%i
-    dat2 ='dat2/dat2_%s'%i
-    ndip ='ndip/ndip%s'%i
-    sdip ='sdip/sdip%s'%i
-    pq   ='pq/pq%s'%i
-    sdip2='sdip2/sdip2_%s'%i
-    ndip2='ndip2/ndip2_%s'%i
-    signoi ='signoi/signoi%s'%i
-    noiz2 ='noiz2/noiz2_%s'%i
-    sign2 ='sign2/sign2_%s'%i
-    lowf ='lowf/lowf%s'%i
-    sign3 ='sign3/sign3_%s'%i
-    noiz3 ='noiz3/noiz3_%s'%i
-#     PShot ='Fig/PShot_%s'%i
-#     Psign ='Fig/Psign_%s'%i
-#     Pnoiz ='Fig/Pnoiz_%s'%i
-#     Compare ='Fig/Compare_%s'%i
-    # Shot_Mask_bin = 'Shot_mask/Shot_Mask_bin_%s'%i
-    Offsets = 'Offsets/Offsets_%s'%i
-    # MaskedShots.append(Shot_Mask_bin)
-    All.append(sign3)
-    if i in DeadShots:
-        Flow(Shot,'RSF/Cube.rsf','window n1=6250 f3=%d n3=1 | headercut mask="Utils/Shot_Mask.rsf"'%i)
-        Flow(sign3, Shot, 'cp')
-    else:
-        Flow(Shot,'RSF/Cube.rsf', 'window n1=6250 f3=%d n3=1'%i)
-        Vo = 1000
-        padding = 1500
-        nj = (3,2)
-        Flow(tilted, Shot       , 'pad beg1=%d | stretch rule=l v0=%d half=n delay=0 verb=y'%(padding, Vo))
-        Flow(noiz  ,tilted      ,'bandpass fhi=10 | mutter v0=%d half=n'%(Vo*2))
-        Flow(sign  ,tilted      ,'bandpass flo=10')
-        Flow(mask  ,noiz        , 'math output="abs(input)" | mask min=0.02 | dd type=float')
-        Flow(dat2  , [tilted,mask],'add mode=p ${SOURCES[1]}')
-        Flow(ndip  ,noiz       ,'twodip2 order=3 nj1=%d nj2=%d eps=8 verb=n gauss=n p0=2 q0=-2'%(nj[0],nj[0]))
-        Flow(sdip  ,sign, twodip2(nj[1],nj[1],'p0=-2 q0=2'))
-        Flow(pq    ,[dat2, sdip,ndip,mask],twodip2(nj[1],nj[0],'dip1=${SOURCES[1]} dip2=${SOURCES[2]} mask=${SOURCES[3]}'))
-        Flow(sdip2 ,pq, 'window n3=1')
-        Flow(ndip2 ,pq,'window f3=1')
-        Flow(signoi,[dat2,sdip2,ndip2],'''
-             planesignoi sdip=${SOURCES[2]} ndip=${SOURCES[1]}
-             order=3 nj1=%d nj2=%d eps=2 verb=n niter=100'''%nj)
-        #back rotate
-        Flow(noiz2, signoi,'window n3=1 | lmostretch inv=y v0=%d half=n delay=0 | window f1=%d'%(Vo,padding))
-        Flow(sign2,[signoi, mask, tilted, dat2],'''
-             window f3=1 |
-             add mode=p ${SOURCES[1]} | add scale=1,1,-1 ${SOURCES[2:4]} |
-             lmostretch inv=y v0=%d half=n delay=0 | window f1=%d'''%(Vo, padding))
-        Flow(lowf, sign2, 'bandpass fhi=8')
-        Flow(Offsets, 'RSF/TIB01_T', 'window f2=120*%s n2=120| headermath output="offset" | window'%i)
-        Flow(sign3,[sign2,lowf,Offsets],'add scale=1,-1 ${SOURCES[1]} |  mutter offset=${SOURCES[2]} V0=1500 | despike2 wide1=3 wide2=5')
-#         Flow(noiz3,[noiz2,lowf],'add ${SOURCES[1]}')
-
-        #Plot(PShot, Shot, 'window max1=10 | grey title=%s gpow=1'%Shot)
-        #Plot(Psign, sign3, 'window max1=10 | grey title=%s_signal gpow=1'%Shot)
-        #Plot(Pnoiz,noiz3, 'window max1=10 | grey title=%s_noise gpow=1'%Shot)
-#         #Result(Compare, [PShot, Psign, Pnoiz],'SideBySideAniso')
+# ######################## DATA LOADING ################################
+# ########################################################################
+# Flow('RSF/TIB01 RSF/TIB01_T RSF/TIB01_H RSF/TIB01_B', 'TIB01.sgy','segyread tape="$SOURCE" tfile=${TARGETS[1]} hfile=${TARGETS[2]} bfile=${TARGETS[3]}',stdin=0 )
+# #### Static corrections
+# Flow('Utils/Tr_Velocity', 'RSF/Tr_Velocity.dat', 'sfcsv2rsf | transp | dd type=int')
+# Flow('RSF/TIB01_Ts', ['RSF/TIB01_T', 'Utils/Tr_Velocity'], 'headermath key=unknown x1="${SOURCES[1]}" output=x1')
+# Flow('Utils/Statics', 'RSF/TIB01_Ts','headermath output="2*((-1*(%s-selev)/scalel)+(gelev-selev)/scalel)/unknown" '%MaxAlt )
+# Flow('RSF/TIB01_S', ['RSF/TIB01', 'Utils/Statics'], 'stretch rule=d datum=${SOURCES[1]} ')
+# Flow('RSF/Cube', 'RSF/TIB01_S', 'sfintbin axis=n2 xk=tracf yk=fldr mask="Utils/Cube_mask.rsf" map="Utils/Cube_map.rsf"')
+# Flow('Utils/Shot_Mask','', 'spike n1=120 mag=0 | dd type=int')
+#
+# ######## Remove Ground Roll in shot receiver space by rotating ########
+# ############  then dip-filter the low velocity component ##############
+# ########  and trashing the low frequency, back rotating after #########
+# ############# Plane-wave destruction method from Fomel ################
+# NaNShots = [3, 4, 14, 108, 157, 171, 254, 257, 302]
+# DeadShots =[0, 5, 6, 27, 28, 40, 41, 50, 51, 55, 77, 78, 90, 110, 112, 115, 116, 124, 125, 141, 158, 159, 177, 192, 208, 209, 226, 241, 244, 306, 307, 318, 319, 325, 326, 344, 345, 358, 359, 364, 383, 384, 405, 406, 428, 428, 440, 441]
+# All, MaskedShots = [], []
+#
+#
+# for i in range(456):
+#     Shot ='Shots/Shot_'+str(i)
+#     Trace ='Trace/Trace_'+str(i)
+#     tilted ='tilted/tilted%s'%i
+#     noiz ='noiz/noiz%s'%i
+#     sign ='sign/sign%s'%i
+#     mask ='mask/mask%s'%i
+#     dat2 ='dat2/dat2_%s'%i
+#     ndip ='ndip/ndip%s'%i
+#     sdip ='sdip/sdip%s'%i
+#     pq   ='pq/pq%s'%i
+#     sdip2='sdip2/sdip2_%s'%i
+#     ndip2='ndip2/ndip2_%s'%i
+#     signoi ='signoi/signoi%s'%i
+#     noiz2 ='noiz2/noiz2_%s'%i
+#     sign2 ='sign2/sign2_%s'%i
+#     lowf ='lowf/lowf%s'%i
+#     sign3 ='sign3/sign3_%s'%i
+#     noiz3 ='noiz3/noiz3_%s'%i
+# #     PShot ='Fig/PShot_%s'%i
+# #     Psign ='Fig/Psign_%s'%i
+# #     Pnoiz ='Fig/Pnoiz_%s'%i
+# #     Compare ='Fig/Compare_%s'%i
+#     Shot_Mask_bin = 'Shot_mask/Shot_Mask_bin_%s'%i
+#     Offsets = 'Offsets/Offsets_%s'%i
+#     MaskedShots.append(Shot_Mask_bin)
+#     Flow(Shot_Mask_bin, 'Utils/Cube_mask', 'window f3=%d n3=1'%i)
+#     All.append(sign3)
+#     if i in DeadShots:
+#         Flow(Shot,'RSF/Cube.rsf','window n1=6250 f3=%d n3=1 | headercut mask="Utils/Shot_Mask.rsf"'%i)
+#         Flow(sign3, Shot, 'cp')
+#     else:
+#         Flow(Shot,'RSF/Cube.rsf', 'window n1=6250 f3=%d n3=1'%i)
+#         Vo = 1000
+#         padding = 1500
+#         nj = (3,2)
+#         Flow(tilted, Shot       , 'pad beg1=%d | stretch rule=l v0=%d half=n delay=0 verb=y'%(padding, Vo))
+#         Flow(noiz  ,tilted      ,'bandpass fhi=10 | mutter v0=%d half=n'%(Vo*2))
+#         Flow(sign  ,tilted      ,'bandpass flo=10')
+#         Flow(mask  ,noiz        , 'math output="abs(input)" | mask min=0.02 | dd type=float')
+#         Flow(dat2  , [tilted,mask],'add mode=p ${SOURCES[1]}')
+#         Flow(ndip  ,noiz       ,'twodip2 order=3 nj1=%d nj2=%d eps=8 verb=n gauss=n p0=2 q0=-2'%(nj[0],nj[0]))
+#         Flow(sdip  ,sign, twodip2(nj[1],nj[1],'p0=-2 q0=2'))
+#         Flow(pq    ,[dat2, sdip,ndip,mask],twodip2(nj[1],nj[0],'dip1=${SOURCES[1]} dip2=${SOURCES[2]} mask=${SOURCES[3]}'))
+#         Flow(sdip2 ,pq, 'window n3=1')
+#         Flow(ndip2 ,pq,'window f3=1')
+#         Flow(signoi,[dat2,sdip2,ndip2],'''
+#              planesignoi sdip=${SOURCES[2]} ndip=${SOURCES[1]}
+#              order=3 nj1=%d nj2=%d eps=2 verb=n niter=100'''%nj)
+#         #back rotate
+#         Flow(noiz2, signoi,'window n3=1 | lmostretch inv=y v0=%d half=n delay=0 | window f1=%d'%(Vo,padding))
+#         Flow(sign2,[signoi, mask, tilted, dat2],'''
+#              window f3=1 |
+#              add mode=p ${SOURCES[1]} | add scale=1,1,-1 ${SOURCES[2:4]} |
+#              lmostretch inv=y v0=%d half=n delay=0 | window f1=%d'''%(Vo, padding))
+#         Flow(lowf, sign2, 'bandpass fhi=8')
+#         Flow(Offsets, 'RSF/TIB01_T', 'window f2=120*%s n2=120| headermath output="offset" | window'%i)
+#         Flow(sign3,[sign2,lowf,Offsets],'add scale=1,-1 ${SOURCES[1]} |  mutter offset=${SOURCES[2]} V0=1500 | despike2 wide1=3 wide2=5')
+# #         Flow(noiz3,[noiz2,lowf],'add ${SOURCES[1]}')
+#
+#         #Plot(PShot, Shot, 'window max1=10 | grey title=%s gpow=1'%Shot)
+#         #Plot(Psign, sign3, 'window max1=10 | grey title=%s_signal gpow=1'%Shot)
+#         #Plot(Pnoiz,noiz3, 'window max1=10 | grey title=%s_noise gpow=1'%Shot)
+# #         #Result(Compare, [PShot, Psign, Pnoiz],'SideBySideAniso')
 # Flow('Utils/Maskheader', MaskedShots, 'rcat ${SOURCES[1:-1]} axis=1')
-Flow('RSF/Filt_line', All, 'rcat ${SOURCES[1:-1]} axis=2')
+# Flow('RSF/Filt_line', All, 'rcat ${SOURCES[1:-1]} axis=2')
 Masked_Line = 'RSF/Masked_line'
 Flow(Masked_Line, ['RSF/Filt_line', 'Utils/Maskheader'], 'headerwindow mask=${SOURCES[1]}')
 
-# ################Interpolate Missing Data ##################
-# ###########################################################
-# xi = np.arange(MinOff, MaxOff)
-# yi = np.arange(Low_bound, High_bound)
-# zi =np.arange(6250)
-# Filtered_line= LoadRsf (Dir,'Masked_line.rsf')
-# Stacks =[]
-# Cube = np.zeros(shape=(6250, len(xi), len(yi)))
-# masker = np.zeros(shape=(len(xi), len(yi)), dtype=np.int)
-# for i in range(len(Filtered_line)):
-#     o, c= Offsets[i], Pointer[i]-Low_bound
-#     print o, c
-#     if Cube[100,o, c] != 0:
-#         Stacks.append((o, c))
-#     masker[o, c] += 1
-#
-#     Cube[:,o, c] += Filtered_line[i]
-#
-# ######Traces observed to be problematic during QC##########
-# ###########################################################
-# ManDeadTr = np.array([[20,39],[20,43],[21,41],[21,110],[23,35],[28,10],[70,48],[81,8],[159,67],[175,26],[187,115],[187,116],[188,111],[188,112],[201,38],[284,55],[285,51],[435,112],[435,116],[435,119],[436,44],[437,108],[437,115],[438,111],[443,55],[443,91],[444,51]])
-# for dt in range(len(ManDeadTr)):
-#     t= ManDeadTr[0]*120+ManDeadTr[1]
-#     masker[Offsets[i], Pointer[i]-Low_bound] = 0 ### ignores all stack in case large noise
-#
-# ###### normalise amplitude where Stacks ########
-# ####### of 2 traces in the same bin   ##########
-# Stacks.sort(key= lambda x: x[0])
-# n= 0
-# while n < len(Stacks):
-#     S = 2
-#     m=n
-#     while Stacks[m] == Stacks[n]:
-#         S +=1
-#         m +=1
-#         if m>len(Stacks):
-#             break
-#     Cube[:,Stacks[n][0], Stacks[n][1]] /= S
-#     n += S-1
-#
-# MESHZ, MESHX = np.meshgrid(zi, xi)
-# DirCdP = Dir[:-3]+'CdP_filt'
-# if __name__ == '__main__':
-#     pool = Pool()
+################Interpolate Missing Data ##################
+###########################################################
+xi = np.arange(MinOff, MaxOff+1)
+yi = np.arange(Low_bound, High_bound+1)
+zi =np.arange(6250)
+Filtered_line= LoadRsf (Dir,'Masked_line.rsf')
+Stacks =[]
+Cube = np.zeros(shape=(6250, len(xi), len(yi)))
+masker = np.zeros(shape=(len(xi), len(yi)), dtype=np.int)
+for i in range(len(Filtered_line)):
+    o, c= Offsets[i], Pointer[i]-Low_bound
+    if Cube[100,o, c] != 0:
+        Stacks.append((o, c))
+    masker[o, c] += 1
+    Cube[:,o, c] += Filtered_line[i]
+
+######Traces observed to be problematic during QC##########
+###########################################################
+ManDeadTr = np.array([[20,39],[20,43],[21,41],[21,110],[23,35],[28,10],[70,48],[81,8],[159,67],[175,26],[187,115],[187,116],[188,111],[188,112],[201,38],[284,55],[285,51],[435,112],[435,116],[435,119],[436,44],[437,108],[437,115],[438,111],[443,55],[443,91],[444,51]])
+for dt in range(len(ManDeadTr)):
+    t= ManDeadTr[0]*120+ManDeadTr[1]
+    masker[Offsets[i], Pointer[i]-Low_bound] = 0 ### ignores all stack in case large noise
+
+###### normalise amplitude where Stacks ########
+####### of 2 traces in the same bin   ##########
+Stacks.sort(key= lambda x: x[0])
+n= 0
+while n < len(Stacks):
+    S = 2
+    m=n
+    while Stacks[m] == Stacks[n]:
+        S +=1
+        m +=1
+        if m>len(Stacks):
+            break
+    Cube[:,Stacks[n][0], Stacks[n][1]] /= S
+    n += S-1
+
+MESHZ, MESHX = np.meshgrid(zi, xi)
+DirCdP = Dir[:-3]+'CdP_filt'
+CubeI = np.zeros(shape=(6250, len(xi), len(yi)))
+for o in range(len(yi)):
+    CubeI[:,:,o]= Fill_CdP((DirCdP, Cube[:,:,o], masker, MESHZ, MESHX, xi, zi, o))
+DirMO = Dir[:-3]+'MO_filt'
+Meshz, Meshy = np.meshgrid(zi, yi)
+CubeII = np.zeros(shape=(6250, len(xi), len(yi)))
+for s in range(len(xi)):
+    CubeII[:,s,:]=Fill_MO((DirMO, CubeI[:,s,:], masker, Meshz, Meshy, zi, yi,s))
+CubeII += Cube[:]
+Cube_Name='RSF/CubeII.rsf'
+Out = m8r.Output(Dir+os.sep+Cube_Name)
+Out.write(CubeII.T)#.data
+Cube, CubeI =None,None #
+# if __name__ == 'SCons.Script':
+#     print 'here'
+#     pool = Pool(12)
 #     pool.map(Fill_CdP, [(DirCdP, Cube[:,:,o], masker, MESHZ, MESHX, xi, zi, o) for o in range(len(yi))])
 # pool.close()
 # pool.join()
-#
-# ####### Where interpolation failed, put the original data##########
-# #####interpolation fails when there is no gap between traces #####
-# ##################################################################
+
+####### Where interpolation failed, put the original data##########
+#####interpolation fails when there is no gap between traces #####
+##################################################################
 # for i in range(len(yi)):
 #     FileName = DirCdP+os.sep+'CdP_Grid_'+str(i)+'.npy'
 #     if os.path.isfile(FileName):
 #         CubeI[:,:,i] = np.load(FileName)
 #     else:
 #         CubeI[:,:,i] = Cube[:,:,i]
-#
-# DirMO = Dir[:-3]+'MO_filt'
-# Meshz, Meshy = np.meshgrid(zi, yi)
+
+
+
 # if __name__ == '__main__':
-#     pool2 = Pool(4)
-#     pool2.map(Fill_MO, [(DirMO, CubeI[:,s,:], masker, Meshz, Meshy, zi, yi,s) for s in range(len(xi))])
+#     pool2 = Pool(12)
+#     pool2.map(
 # pool2.close()
 # pool2.join()
-#
+
 # CubeII = np.zeros(shape=(6250, len(xi), len(yi)))
 # for i in range(len(xi)):
 #     FileName = DirMO+os.sep+'MO_Grid_'+str(s)+'.npy'
@@ -395,12 +410,12 @@ Flow(Masked_Line, ['RSF/Filt_line', 'Utils/Maskheader'], 'headerwindow mask=${SO
 #     pool3.map(SaveCDP, [(i, CubeII[:,:,i].T) for i in range(len(yi))])
 # pool3.close()
 # pool3.join()
-#
-# ##################Import regularized CdPs  ##########################
+
+##################Import regularized CdPs  ##########################
 # ######################################################################
 # for C in range(len(yi)):
 #     Flow('CDP_R_W8ted/CdP4_%s'%C, 'CDP_R_W8ted/New_CDP_%s.dat'%C, 'sfcsv2rsf | put d1=0.004 label1="Time", unit1="s" d2=50 label2="CdP" unit2="m"| window f2=4 n2=70')
-#
+
 # ####################### Process CdP #####################################
 # ##### http://www.ahay.org/RSF/book/tccs/nmodeblend/paper_html/paper.html
 # ### The scan could be done as a cube, better?
@@ -554,5 +569,5 @@ Flow(Masked_Line, ['RSF/Filt_line', 'Utils/Maskheader'], 'headerwindow mask=${SO
 # # <RSF/PSTM.rsf sfpad beg2=100 end2=100 | sfvelcon vel=1.5 adj=n | sfwindow f2=100 n2=870
 #
 #
-#
-# End()
+main()
+End()
