@@ -98,7 +98,7 @@ def Smooth_Data(xi, yi, zi, Dir, Cube, masker):
     ################# writing CdP ##################
     if __name__:# == '__main__':
         pool3 = Pool(18)
-        pool3.map(SaveCDP, [(i, CubeII[:,:,i].T) for i in range(len(yi))])
+        pool3.map(SaveCDP, [(i, CubeII[:,:,i]) for i in range(len(yi))])
     pool3.close()
     pool3.join()
     pool3.terminate()

@@ -331,7 +331,7 @@ yi = np.arange(Low_bound, High_bound+1)
 #################Import regularized CdPs  ##########################
 ######################################################################
 # for C in range(len(yi)):
-#     Flow('CDP_R_W8ted/CdP4_%s'%C, 'CDP_R_W8ted/New_CDP_%s.dat'%C, 'sfcsv2rsf | put d1=0.004 label1="Time", unit1="s" d2=50 label2="Offset" unit2="m"| window f2=4 n2=64')
+#     Flow('CDP_R_W8ted/CdP4_%s'%C, 'CDP_R_W8ted/New_CDP_%s.dat'%C, 'sfcsv2rsf | transp | put d1=0.004 label1="Time", unit1="s" d2=50 label2="Offset" unit2="m"| window f2=4 n2=64')
 
 ####################### Process CdP #####################################
 ##### http://www.ahay.org/RSF/book/tccs/nmodeblend/paper_html/paper.html
@@ -408,7 +408,7 @@ for i in range(High_bound-Low_bound):
     # Flow(vint, vpick2, 'smooth rect1=200 repeat=5 |dix rect1=100')
     Flow(nmo2, [cdp2, vpick2],'nmo velocity=${SOURCES[1]} half=y | despike2 wide1=3 wide2=3')
 # #    Flow(dmo2, nmo2, 'transp plane=23 | dmo velhalf=3500 half=y | transp plane=23 | sfdespike2 wide1=3 wide2=3')
-#     Flow(cdp3, [nmo2, vpick2], 'inmo velocity=${SOURCES[1]} half=y')
+    Flow(cdp3, [nmo2, vpick2], 'inmo velocity=${SOURCES[1]} half=y')
 #     # Plot(nmo, nmo, 'sfgrey color=i scalebar=y title="standard nmo"')
 #     # Flow(Dip0,cdp,dip(1./V1-1./V2))
 #     # Flow(Dip1,cdp,dip(1./V2))
@@ -432,8 +432,8 @@ Flow('RSF/Vel_Picks', Vel_Picks, 'rcat ${SOURCES[1:-1]} axis=2')
 # Flow('RSF/Filt_NMO', NMO_Sp, 'rcat ${SOURCES[1:-1]} axis=2')
 Flow('RSF/NMO_Stack','RSF/NMO', 'stack axis=2' )
 Flow('RSF/Semblances', Sembs, 'rcat ${SOURCES[1:-1]} axis=3')
-Flow('RSF/DMO', Dmos, 'rcat ${SOURCES[1:-1]} axis=3')
-Flow('RSF/DMO_Stack','RSF/DMO', 'stack axis=2' )
+# Flow('RSF/DMO', Dmos, 'rcat ${SOURCES[1:-1]} axis=3')
+# Flow('RSF/DMO_Stack','RSF/DMO', 'stack axis=2' )
 # Flow('RSF/pNMO_Stack','RSF/pNMO', 'stack axis=2' )
 ### NaN in the Velocity
 Flow('RSF/Vel_Picks_Stack','RSF/Vel_Picks', 'clip2 lower=2000 upper=8000 |stack axis=2' )
@@ -465,7 +465,7 @@ Result('Stack/Vel_Picks_Stack', ['RSF/Vel_Picks_Stack','RSF/Vel_Picks'], 'SideBy
 # #        rect2=70)
 Flow('RSF/Pick_Semblance', ['RSF/Semblances','RSF/Vel_Picks'], 'slice pick=${SOURCES[1]}')
 # Flow('RSF/IntVel',['RSF/Vel_Picks','RSF/Pick_Semblance' ], 'dix weight=${SOURCES[1]} rect1=100 rect2=100')
-Flow('RSF/IntVel', VI, 'rcat ${SOURCES[1:-1]} axis=3')
+# Flow('RSF/IntVel', VI, 'rcat ${SOURCES[1:-1]} axis=3')
 Flow('RSF/CdPs3', CdPs3, 'rcat ${SOURCES[1:-1]} axis=3')
 Flow('RSF/CdPs3a','RSF/CdPs3', 'put label2="CdP" d3=25 o3=%s label3="Offset" unit3=m'%Low_bound )
 Flow('RSF/CdPs3T','RSF/CdPs3a', 'transp memsize=20000 plane=23')
