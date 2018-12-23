@@ -1,8 +1,12 @@
 #!/usr/bin/csh
 from rsf.proj import *
-import os, sys
+import os, sys, m8r
+import numpy as np
 os.environ['SFPENOPTS'] = 'bgcolor=w'
-from rsf.recipes.velcon import velcon
+# from rsf.recipes.velcon import velcon
+import matplotlib.pyplot as plt
+import scipy.interpolate as SC
+from multiprocessing import Pool
 
 def twodip2(nj1,nj2,extra):
     return '''twodip2 order=3 nj1=%d nj2=%d eps=8 verb=n gauss=n''' % (nj1,nj2) + extra
@@ -14,26 +18,223 @@ def grey(title):
     ''' % title
 def dip(slow2):
     return '''math output="(%g*x2/x1)" | mutter half=n v0=1400 tp=0.4''' % (slow2*d2/d1)
+
+def getData (Dir, File, Header):
+    F = m8r.Input(Dir+os.sep+File)
+    TrH = m8r.Input(Dir+os.sep+Header)
+    Data = np.array(F)
+    TrHead= np.array(TrH)
+    return Data, TrHead
+
+def LoadRsf (Dir, File):
+    F = m8r.Input(Dir+os.sep+File)
+    Data = np.array(F)
+    return Data
+
+def Interpolate(X, Y, Z, Bin, deg, S):
+    ''' Interpolate a 3D spline according to distance between points'''
+    #find NaN
+    Fin = np.isfinite(X)
+    X, Y, Z = X[:][Fin], Y[:][Fin], Z[:][Fin]
+    Ds = np.zeros(len(X), dtype =np.float)
+    # sort by distance from first point
+    Ds[1:] += (X[1:]-X[0])**2
+    Ds[1:] += (Y[1:]-Y[0])**2
+    Ds[1:] += (Z[1:]-Z[0])**2
+    Ds = Ds**0.5
+    Ind = np.argsort(Ds)
+    # Reinitialise coordinates add padding with linear interpolation
+    Xs, Ys, Zs = np.zeros(len(X)+2), np.zeros(len(X)+2), np.zeros(len(X)+2)
+    Xs[1:-1], Ys[1:-1], Zs[1:-1] = X[Ind], Y[Ind], Z[Ind]
+    n = 4
+    Xs[0], Ys[0], Zs[0]    = n*X[0]-(n-1)*X[1],   n*Y[0]-(n-1)*Y[1],   n*Z[0]-(n-1)*Z[1]
+    Xs[-1], Ys[-1], Zs[-1] = n*X[-1]-(n-1)*X[-2], n*Y[-1]-(n-1)*Y[-2], n*Z[-1]-(n-1)*Z[-2]
+    D = np.zeros(len(Xs))
+    D[1:] += (Xs[1:] - Xs[:-1])**2
+    D[1:] += (Ys[1:] - Ys[:-1])**2
+    D[1:] += (Zs[1:] - Zs[:-1])**2
+    D = D**0.5
+    D = D.cumsum()
+    X_Spline = SC.UnivariateSpline( D, Xs, k=deg, s = S)
+    Y_Spline = SC.UnivariateSpline( D, Ys, k=deg, s = S)
+    Z_Spline = SC.UnivariateSpline( D, Zs, k=deg, s = S)
+    New_D = np.arange(D[0], D[-1], Bin)
+    Spl_X = X_Spline(New_D)
+    Spl_Y = Y_Spline(New_D)
+    Spl_Z = Z_Spline(New_D)
+    return X_Spline, Y_Spline, Z_Spline, Spl_X, Spl_Y, Spl_Z
+
+def IntVelTrack(Xs, Ys, Zs, Bin, deg):
+    ''' Interpolate a 3D spline according to distance between points
+    But bin on the 2 first axis only (X depth Velocity)'''
+    Do,Ds = np.zeros(len(Xs)), np.zeros(len(Xs))
+    Do[1:] += (Xs[1:] - Xs[:-1])**2
+    Do[1:] += (Ys[1:] - Ys[:-1])**2
+    Ds[1:] += Do[1:] + (Zs[1:] - Zs[:-1])**2
+    Ds = Ds**0.5
+    Ds = Ds.cumsum()
+    Do = Do**0.5
+    Do = Do.cumsum()
+    X_Spline = SC.UnivariateSpline( Ds, Xs, k=deg)
+    Y_Spline = SC.UnivariateSpline( Ds, Ys, k=deg)
+    Z_Spline = SC.UnivariateSpline( Ds, Zs, k=deg)
+    Nbin = int(Ds[-1]//(Do[-1]//Bin))
+    New_D = np.arange(Ds[0], Ds[-1], Nbin)
+    Spl_X,Spl_Y, Spl_Z  = X_Spline(New_D), Y_Spline(New_D), Z_Spline(New_D)
+    return Spl_X, Spl_Y, Spl_Z
+
+def closest_node(pt, line):
+    dist_2 = np.sum((line-pt)**2, axis=1)
+    return np.argmin(dist_2)
+
+def Calc_CMP2D(TraceH, CoX, CoY, CdP_Bin, deg):
+    '''make CMPs arrays tr X, Y, Z
+    Construct a pointer between shortest binned curve and each CMP, extract fold'''
+    Tr=TraceH[:,0]
+    ScZ, ScX = abs(TraceH[:,19]), abs(TraceH[:,20])
+    XS= TraceH[:,21]/ScX+CoX
+    YS= TraceH[:,22]/ScX+CoY
+    ZS= TraceH[:,13]/ScZ
+    Xr, Yr, Zr    = TraceH[:,23]/ScX+CoX, TraceH[:,24]/ScX+CoY, TraceH[:,12]/ScZ
+    CMPs = np.zeros((len(XS),4))
+    for o in range(len(TraceH)):
+        CMPs[o,0], CMPs[o,1], CMPs[o,2], CMPs[o,3] = Tr[o], (Xr[o]+XS[o])/2, (Yr[o]+YS[o])/2, (Zr[o]+ZS[o])/2
+    CMPm = CMPs[::Receivers/2]
+    ### Prepare spline:
+    xyz = np.unique(CMPm[:,1:], axis=0)
+    xyz = xyz[xyz[:,1].argsort()] #sorting to compensate for weird sorting from np.unique
+    ### calculate spline to make binning notice subsampling and intense smoothing
+    m= xyz.var()
+    std =0.002
+    Sm=(m)*std**2
+    X_Spline, Y_Spline, Z_Spline, Spl_X, Spl_Y, Spl_Z = Interpolate(xyz[:,0][::6], xyz[:,1][::6], xyz[:,2][::6], Bin=CdP_Bin, deg=deg, S=Sm)
+    Pointer = np.ones(len(CMPs), dtype=np.int)*-1 # contains index of nearest Spline node
+    Spline= np.zeros((len(Spl_X),3))
+    Spline[:,0], Spline[:,1], Spline[:,2] = Spl_X, Spl_Y, Spl_Z
+    for a in range(len(CMPs)):
+        if np.isfinite(CMPs[a, 1]):
+            Pointer[a] = closest_node(CMPs[a,1:], Spline)
+    #Pointer = np.ma.masked_where(Pointer<0, Pointer)
+    BinP, fold = np.unique(Pointer, return_counts=True)
+    return Xr, Yr, Zr, CMPs, Spline, Pointer, BinP, fold[:-1]
+
+def Fill_CdP((Dir, Data_Slice, masker, MESHZ, MESHX, xi, zi, o)):
+    '''Interpolate discrete values at constant CdP
+    To regularize the data'''
+    FileName= Dir+os.sep+'CdP_Grid_'+str(o)+'.npy'
+    if not os.path.isfile(FileName):
+        CdP_mask = np.zeros((6250, len(masker)), dtype=np.int)
+        CdP_mask[:,np.where(masker[:,o]>0.1)] +=1
+        Z, X = np.where(CdP_mask>0.1)
+        Coords = np.vstack((zi[Z],xi[X])).T
+        CdP=SC.griddata(Coords,Data_Slice[Z, X], (MESHZ, MESHX), method='linear', fill_value=0).T
+        np.save(FileName, CdP)
+    return
+
+def Fill_MO((Dir, Data_Slice, masker, Meshz, Meshy, zi, yi, s)):
+    '''Interpolate discrete values at constant Offset
+    To regularize the data'''
+    FileName= Dir+os.sep+'MO_Grid_'+str(s)+'.npy'
+    if not os.path.isfile(FileName):
+        MO_mask = np.zeros((6250, len(masker[0])))
+        MO_mask[:, np.where(masker[s,:]>0.1)] +=1
+        Z, Y = np.where(MO_mask>0.1)
+        Coords = np.vstack((zi[Z],yi[Y])).T
+        MO=SC.griddata(Coords,Data_Slice[Z, Y], (Meshz, Meshy), method='linear', fill_value=0).T
+        np.save(FileName, MO)
+    return
+
+def SaveCDP((i, CdP)):
+    np.savetxt('CDP_R_W8ted/New_CDP_'+str(i)+'.dat', CdP.T, delimiter=',')
+    return
+#########################Parameters ##################################
 d1=0.004
 d2=25 #Offset sampling, theoretical (practice 50)
+Dir ='/media/julien/NuDrive/Himalayas/dummy/SGY/INDEPTH/RSF'
+Vo= 1794
+MaxAlt = 4573599
+######################## File management ####################
+###################### Data gathering ######################
+Files   =  ['TIB01.rsf']
+Headers = Files[:]
+L, H, TT    = [], [], []
+for a in range(len(Files)):
+    Headers[a] = Files[a][:-4]+'_T'+Files[a][-4:]
+    L, H = getData (Dir, Files[a], Headers[a])
+    TT = H[-1,1]
+
+#################### Data consolidation ##################
+Receivers= H[0,-13]
+Nh = len(H[0])
+S = H[0,38]
+CorrTr=[0]
+#CorrTr = [0,2,0,0,13] ##L[1] missing 2 traces L[4] missing 13 traces QC might be done directly from trace headers?
+Tr = sum(TT+CorrTr)
+Geom =(Tr/Receivers,S, Receivers) ## assuming first shot is correct
+TraceH = np.zeros((Geom[0], Nh, Receivers))
+
+######## Source and Receiver positions in real space ############
+#################### get CMPs etc ############################
+CoX, CoY = 700000, 3000000  #Coordinate modifier
+TraceH=H.astype(np.float)
+Xr, Yr, Zr, CMPs, Spline, Pointer, BinP, fold = Calc_CMP2D(TraceH, CoX, CoY, CdP_Bin=100, deg=2)
+
+########### Create CMP Gather Geometry ###########
+Offsets = np.zeros(len(Pointer), dtype=np.int)
+for i in range(len(Pointer)):
+        #o,r = i/Receivers//1, i%Receivers #pointing inside Offset cube headers
+        Offsets[i] =np.around((([Xr[i], Yr[i], Zr[i]]-Spline[Pointer[i]])**2).sum()**.5/50, decimals=0)
+Low_bound, High_bound = BinP[0], BinP[-1]+1
+MinOff, MaxOff= int(Offsets.min()),int(Offsets.max()//1)+1
+
+#### include diving wave topography residual velocity##############
+###################################################################
+Vels = np.genfromtxt('/media/julien/NuDrive/Himalayas/Tomo.txt', names=True)
+###################Extract Surface velocities######################
+TopX, TopY,TopV =[Vels['Distance'][0]],[Vels['Z'][0]],[Vels['VP'][0]]
+i = 1
+while i < len(Vels):
+    if Vels['Distance'][i] ==  Vels['Distance'][i-1]:
+        i+=1
+    else:
+        if  Vels['VP'][i] <0:
+            i+=1
+        else:
+            TopX.append(Vels['Distance'][i])
+            TopY.append(Vels['Z'][i])
+            TopV.append(Vels['VP'][i])
+            i+=1
+TopX, TopY,TopV =np.array(TopX),np.array(TopY),np.array(TopV)
+ ########## Match unknown tomographic coord to CMP profile
+# TopSpl_X, TopSpl_Y, TopSpl_V= IntVelTrack(TopX, TopY,TopV, Bin=100, deg=2)
+Bin=100
+Dspl=np.zeros(len(Spline), dtype =np.float)
+for i in range(3):
+    Dspl[1:] += (Spline[1:,i]-Spline[:-1,i])**2
+Dspl = Dspl**.5
+Dspl = Dspl.cumsum()
+XV_Spline=SC.UnivariateSpline(TopX, TopV, k=2, ext='const')
+Delta = (Dspl[-1]-TopX[-1])//2
+TopX_Spl = np.arange(-Delta,TopX[-1]+Delta, Bin)
+#Dspl = Dspl[Low_bound-13:High_bound+13]-Dspl[Low_bound-13] # matches Xspline
+# Vel_st = TopSpl_V[Low_bound-31:High_bound+31]  ### Dirty!
+Vel_tr = np.zeros(len(Pointer))
+for i in range(len(Pointer)):
+    Vel_tr[i]= XV_Spline(TopX_Spl[Pointer[i]-Low_bound])
+np.savetxt(Dir+os.sep+'Tr_Velocity.dat', Vel_tr, delimiter=',')
+
+
 
 ######################## DATA LOADING ################################
 ########################################################################
 Flow('RSF/TIB01 RSF/TIB01_T RSF/TIB01_H RSF/TIB01_B', 'TIB01.sgy','segyread tape="$SOURCE" tfile=${TARGETS[1]} hfile=${TARGETS[2]} bfile=${TARGETS[3]}',stdin=0 )
-Flow('RSF/Cube', 'RSF/TIB01', 'sfintbin axis=n2 xk=tracf yk=fldr mask="Utils/Cube_mask.rsf" map="Utils/Cube_map.rsf"')
-Flow('Utils/Scalel', 'RSF/TIB01_T', 'headermath output="scalel"| dd type=float | window')
-Flow('Utils/Xr', 'RSF/TIB01_T', 'headermath output="gx" | dd type=float | window')
-Flow('Utils/Yr', 'RSF/TIB01_T', 'headermath output="gy" | dd type=float | window')
-Flow('Utils/Xr_Sc', 'Utils/Xr Utils/Scalel', 'math x=${SOURCES[1]} output=input/x')
-Flow('Utils/Yr_Sc', 'Utils/Yr Utils/Scalel', 'math x=${SOURCES[1]} output=input/x')
-Flow('Utils/XYr', 'Utils/Xr_Sc Utils/Yr_Sc', 'cat axis=2 ${SOURCES[1]} | window | transp')
-Flow('Utils/Offsets', 'RSF/TIB01_T', 'headermath output="offset" | dd type=float | math output="abs(input)/2" | window | put label1="offset"')
-Flow('Utils/fldr', 'RSF/TIB01_T', 'headermath output="fldr"| window')
-Flow('Utils/OffShot', 'Utils/Offsets Utils/fldr', 'cat axis=2 ${SOURCES[1]} | window | transp ')
-Flow('Utils/cdp', 'RSF/TIB01_T', 'headermath output="cdp" | dd type=float | window| put label1="cdp"')
-Flow('Utils/OffCdp', 'Utils/Offsets Utils/cdp', 'cat axis=2 ${SOURCES[1]}| transp')
+#### Static corrections
+Flow('Utils/Tr_Velocity', 'RSF/Tr_Velocity.dat', 'sfcsv2rsf | transp | dd type=int')
+Flow('RSF/TIB01_Ts', ['RSF/TIB01_T', 'Utils/Tr_Velocity'], 'headermath key=unknown x1="${SOURCES[1]}" output=x1')
+Flow('Utils/Statics', 'RSF/TIB01_Ts','headermath output="2*((-1*(%s-selev)/scalel)+(gelev-selev)/scalel)/unknown" '%MaxAlt )
+Flow('RSF/TIB01_S', ['RSF/TIB01', 'Utils/Statics'], 'stretch rule=d datum=${SOURCES[1]} ')
+Flow('RSF/Cube', 'RSF/TIB01_S', 'sfintbin axis=n2 xk=tracf yk=fldr mask="Utils/Cube_mask.rsf" map="Utils/Cube_map.rsf"')
 Flow('Utils/Shot_Mask','', 'spike n1=120 mag=0 | dd type=int')
-
 
 ######## Remove Ground Roll in shot receiver space by rotating ########
 ############  then dip-filter the low velocity component ##############
@@ -42,71 +243,65 @@ Flow('Utils/Shot_Mask','', 'spike n1=120 mag=0 | dd type=int')
 NaNShots = [3, 4, 14, 108, 157, 171, 254, 257, 302]
 DeadShots =[0, 5, 6, 27, 28, 40, 41, 50, 51, 55, 77, 78, 90, 110, 112, 115, 116, 124, 125, 141, 158, 159, 177, 192, 208, 209, 226, 241, 244, 306, 307, 318, 319, 325, 326, 344, 345, 358, 359, 364, 383, 384, 405, 406, 428, 428, 440, 441]
 All, MaskedShots = [], []
-#need to map the velocities along the line
-Vo= 1794
-MaxAlt = 4573599
-# for i in range(456):
-#     Shot ='Shots/Shot_'+str(i)
-#     Trace ='Trace/Trace_'+str(i)
-#     tilted ='tilted/tilted%s'%i
-#     noiz ='noiz/noiz%s'%i
-#     sign ='sign/sign%s'%i
-#     mask ='mask/mask%s'%i
-#     dat2 ='dat2/dat2_%s'%i
-#     ndip ='ndip/ndip%s'%i
-#     sdip ='sdip/sdip%s'%i
-#     pq   ='pq/pq%s'%i
-#     sdip2='sdip2/sdip2_%s'%i
-#     ndip2='ndip2/ndip2_%s'%i
-#     signoi ='signoi/signoi%s'%i
-#     noiz2 ='noiz2/noiz2_%s'%i
-#     sign2 ='sign2/sign2_%s'%i
-#     lowf ='lowf/lowf%s'%i
-#     sign3 ='sign3/sign3_%s'%i
-#     noiz3 ='noiz3/noiz3_%s'%i
+
+
+for i in range(456):
+    Shot ='Shots/Shot_'+str(i)
+    Trace ='Trace/Trace_'+str(i)
+    tilted ='tilted/tilted%s'%i
+    noiz ='noiz/noiz%s'%i
+    sign ='sign/sign%s'%i
+    mask ='mask/mask%s'%i
+    dat2 ='dat2/dat2_%s'%i
+    ndip ='ndip/ndip%s'%i
+    sdip ='sdip/sdip%s'%i
+    pq   ='pq/pq%s'%i
+    sdip2='sdip2/sdip2_%s'%i
+    ndip2='ndip2/ndip2_%s'%i
+    signoi ='signoi/signoi%s'%i
+    noiz2 ='noiz2/noiz2_%s'%i
+    sign2 ='sign2/sign2_%s'%i
+    lowf ='lowf/lowf%s'%i
+    sign3 ='sign3/sign3_%s'%i
+    noiz3 ='noiz3/noiz3_%s'%i
 #     PShot ='Fig/PShot_%s'%i
 #     Psign ='Fig/Psign_%s'%i
 #     Pnoiz ='Fig/Pnoiz_%s'%i
 #     Compare ='Fig/Compare_%s'%i
-#     Shot_Mask_bin = 'Shot_mask/Shot_Mask_bin_%s'%i
-#     Offsets = 'Offsets/Offsets_%s'%i
-#     Headers = 'Headers/Headers_%s'%i
-#     Statics = 'Statics/Statics_%s'%i
-#     Flow(Shot_Mask_bin, 'Utils/Cube_mask', 'window f3=%d n3=1'%i)
-#     MaskedShots.append(Shot_Mask_bin)
-#     All.append(sign3)
-#     if i in DeadShots:
-#         Flow(Shot,'RSF/Cube.rsf','window n1=6250 f3=%d n3=1 | headercut mask="Utils/Shot_Mask.rsf"'%i)
-#         Flow(sign3, Shot, 'cp')
-#     else:
-#         Flow(Shot,'RSF/Cube.rsf', 'window n1=6250 f3=%d n3=1'%i)
-#         Vo = 1000
-#         padding = 1500
-#         nj = (3,2)
-#         Flow(tilted, Shot       , 'pad beg1=%d | stretch rule=l v0=%d half=n delay=0 verb=y'%(padding, Vo))
-#         Flow(noiz  ,tilted      ,'bandpass fhi=10 | mutter v0=%d half=n'%(Vo*2))
-#         Flow(sign  ,tilted      ,'bandpass flo=10')
-#         Flow(mask  ,noiz        , 'math output="abs(input)" | mask min=0.02 | dd type=float')
-#         Flow(dat2  , [tilted,mask],'add mode=p ${SOURCES[1]}')
-#         Flow(ndip  ,noiz       ,'twodip2 order=3 nj1=%d nj2=%d eps=8 verb=n gauss=n p0=2 q0=-2'%(nj[0],nj[0]))
-#         Flow(sdip  ,sign, twodip2(nj[1],nj[1],'p0=-2 q0=2'))
-#         Flow(pq    ,[dat2, sdip,ndip,mask],twodip2(nj[1],nj[0],'dip1=${SOURCES[1]} dip2=${SOURCES[2]} mask=${SOURCES[3]}'))
-#         Flow(sdip2 ,pq, 'window n3=1')
-#         Flow(ndip2 ,pq,'window f3=1')
-#         Flow(signoi,[dat2,sdip2,ndip2],'''
-#              planesignoi sdip=${SOURCES[2]} ndip=${SOURCES[1]}
-#              order=3 nj1=%d nj2=%d eps=2 verb=n niter=100'''%nj)
-#         #back rotate
-#         Flow(noiz2, signoi,'window n3=1 | lmostretch inv=y v0=%d half=n delay=0 | window f1=%d'%(Vo,padding))
-#         Flow(sign2,[signoi, mask, tilted, dat2],'''
-#              window f3=1 |
-#              add mode=p ${SOURCES[1]} | add scale=1,1,-1 ${SOURCES[2:4]} |
-#              lmostretch inv=y v0=%d half=n delay=0 | window f1=%d'''%(Vo, padding))
-#         Flow(lowf, sign2, 'bandpass fhi=8')
-#         Flow(Headers, 'RSF/TIB01_T', 'window f2=120*%s n2=120'%i)
-#         Flow(Offsets, Headers, 'headermath output="offset" | window')
-#         Flow(Statics, Headers,'headermath output="((-1*(%s-selev)/scalel)+(gelev-selev)/scalel)/%s"' %(MaxAlt,Vo))
-#         Flow(sign3,[sign2,lowf,Statics, Offsets],'add scale=1,-1 ${SOURCES[1]} | stretch rule=d datum=${SOURCES[2]} | mutter offset=${SOURCES[3]} V0=2000 | despike2 wide1=3 wide2=5')
+    # Shot_Mask_bin = 'Shot_mask/Shot_Mask_bin_%s'%i
+    Offsets = 'Offsets/Offsets_%s'%i
+    # MaskedShots.append(Shot_Mask_bin)
+    All.append(sign3)
+    if i in DeadShots:
+        Flow(Shot,'RSF/Cube.rsf','window n1=6250 f3=%d n3=1 | headercut mask="Utils/Shot_Mask.rsf"'%i)
+        Flow(sign3, Shot, 'cp')
+    else:
+        Flow(Shot,'RSF/Cube.rsf', 'window n1=6250 f3=%d n3=1'%i)
+        Vo = 1000
+        padding = 1500
+        nj = (3,2)
+        Flow(tilted, Shot       , 'pad beg1=%d | stretch rule=l v0=%d half=n delay=0 verb=y'%(padding, Vo))
+        Flow(noiz  ,tilted      ,'bandpass fhi=10 | mutter v0=%d half=n'%(Vo*2))
+        Flow(sign  ,tilted      ,'bandpass flo=10')
+        Flow(mask  ,noiz        , 'math output="abs(input)" | mask min=0.02 | dd type=float')
+        Flow(dat2  , [tilted,mask],'add mode=p ${SOURCES[1]}')
+        Flow(ndip  ,noiz       ,'twodip2 order=3 nj1=%d nj2=%d eps=8 verb=n gauss=n p0=2 q0=-2'%(nj[0],nj[0]))
+        Flow(sdip  ,sign, twodip2(nj[1],nj[1],'p0=-2 q0=2'))
+        Flow(pq    ,[dat2, sdip,ndip,mask],twodip2(nj[1],nj[0],'dip1=${SOURCES[1]} dip2=${SOURCES[2]} mask=${SOURCES[3]}'))
+        Flow(sdip2 ,pq, 'window n3=1')
+        Flow(ndip2 ,pq,'window f3=1')
+        Flow(signoi,[dat2,sdip2,ndip2],'''
+             planesignoi sdip=${SOURCES[2]} ndip=${SOURCES[1]}
+             order=3 nj1=%d nj2=%d eps=2 verb=n niter=100'''%nj)
+        #back rotate
+        Flow(noiz2, signoi,'window n3=1 | lmostretch inv=y v0=%d half=n delay=0 | window f1=%d'%(Vo,padding))
+        Flow(sign2,[signoi, mask, tilted, dat2],'''
+             window f3=1 |
+             add mode=p ${SOURCES[1]} | add scale=1,1,-1 ${SOURCES[2:4]} |
+             lmostretch inv=y v0=%d half=n delay=0 | window f1=%d'''%(Vo, padding))
+        Flow(lowf, sign2, 'bandpass fhi=8')
+        Flow(Offsets, 'RSF/TIB01_T', 'window f2=120*%s n2=120| headermath output="offset" | window'%i)
+        Flow(sign3,[sign2,lowf,Offsets],'add scale=1,-1 ${SOURCES[1]} |  mutter offset=${SOURCES[2]} V0=1500 | despike2 wide1=3 wide2=5')
 #         Flow(noiz3,[noiz2,lowf],'add ${SOURCES[1]}')
 
         #Plot(PShot, Shot, 'window max1=10 | grey title=%s gpow=1'%Shot)
@@ -114,195 +309,250 @@ MaxAlt = 4573599
         #Plot(Pnoiz,noiz3, 'window max1=10 | grey title=%s_noise gpow=1'%Shot)
 #         #Result(Compare, [PShot, Psign, Pnoiz],'SideBySideAniso')
 # Flow('Utils/Maskheader', MaskedShots, 'rcat ${SOURCES[1:-1]} axis=1')
-# Flow('RSF/Filt_line', All, 'rcat ${SOURCES[1:-1]} axis=2')
-# Masked_Line = 'RSF/Masked_line'
-# Flow(Masked_Line, ['RSF/Filt_line', 'Utils/Maskheader'], 'headerwindow mask=${SOURCES[1]}')
-# # Flow('RSF/CDPs',Masked_Line, 'sfintbin axis=n2 xk=cdpx yk=cdpy mask="Utils/CDPs_mask.rsf" map="Utils/CDPs_map.rsf"')
-# Flow('New_Head', 'New_Head.dat', 'csv2rsf delimiter="," dtype=int| transp')
+Flow('RSF/Filt_line', All, 'rcat ${SOURCES[1:-1]} axis=2')
+Masked_Line = 'RSF/Masked_line'
+Flow(Masked_Line, ['RSF/Filt_line', 'Utils/Maskheader'], 'headerwindow mask=${SOURCES[1]}')
 
-#############Import interpolated time-slices ##########################
-#######################################################################
-# CdPl = []
-# for i in range(6250):
-#     CdP_Slice = 'CdP_Slices/CdP_Slice_%s'%i
-#     CdPl.append(CdP_Slice)
-#     #Flow(CdP_Slice, None, 'rm')
-# Cats=[]
-# for i in range(6250)[::250]:
-#     Cat= 'CdP_Slices/cat%s'%i
-#     Cats.append(Cat)
-    # Flow(Cat, CdPl[i:i+250], 'rcat ${SOURCES[1:-1]} axis=3')
-#Flow('RSF/CdP3', Cats, 'rcat ${SOURCES[1:-1]} axis=3 ')
-
-###################Import Offsets with bin stack ##########################
-#######################################################################
-# Filts =[]
-# for C in range(94):
-#     # Flow('MO_filt/MoFilt%s'%C,'MO_filt/MO_Grid_%s.dat'%C,  'sfcsv2rsf | put d1=0.004 label1="Time", unit1="s" d2=100 label2="shot" unit2="m"')
-#     Filts.append('MO_filt/MoFilt%s'%C)
-# Flow('MO_filt/MoFilt_Cube',Filts, 'rcat ${SOURCES[1:-1]} axis=3')
-# Flow('MO_filt/MoFilt_Cube_T', 'MO_filt/MoFilt_Cube', 'sftransp | sftransp plane=23 memsize=50000 | put d1=0.004 o1=0 label1="Time", unit1="s" d2=50 label2="Offset" unit="m" o3=%s d3=100 label3="shot" unit3="m"'%Low_bound)
-
-###################Import regularized CdPs  ##########################
-#######################################################################
-# for C in range(870):
-#     Flow('CDP_R_W8ted/CdP4_%s'%C, 'CDP_R_W8ted/New_CDP_%s.dat'%C, 'sfcsv2rsf | sftransp | put d1=0.004 label1="Time", unit1="s" d2=50 label2="shot" unit2="m"| window f2=4 n2=70')
-
-# Flow('RSF/CdP3t', 'RSF/CdP3', 'transp plane=23 | transp plane 13 | put d1=0.004 label1="Time" unit1="s" d2=25 label2="Offset" unit2="m" d3=25 label3="CdP" unit3="m" o3=%s'%Low_bound)
-# Flow('RSF/CdP2',[Masked_Line, 'New_Head'], 'sfintbin axis=n2 head=${SOURCES[1]} xkey=1 ykey=2 mask="Utils/CDP2_mask.rsf" map="Utils/CDP2_map.rsf"| sfput d3=25 d2=25 label3="CDP" label2="Offset" unit2="m" unit3="m"')
-#Flow('RSF/Brute_Stack', 'RSF/CdP3t', 'stack axis=2')
-
-####################### Process CdP #####################################
-##### http://www.ahay.org/RSF/book/tccs/nmodeblend/paper_html/paper.html
-### The scan could be done as a cube, better?
-#########################################################################
-V1= 1500.
-V2= 10000.
-Low_bound, High_bound = 84, 954
-Dead_CMP=[101,678,69]
-CdPs, NMO, pNMO, Vel_Picks, P_Vels, CdPs3, Sembs, Dmos, VI = [], [], [], [], [], [], [], [], []
-for i in range(High_bound-Low_bound):
-    cdp0 = 'CDP/cdp_%s'%i
-    cdp1 = 'CDP/cdp_1_%s'%i
-    cdp2 = 'CDP/cdp_2_%s'%i
-    cdp3 = 'CDP/cdp_3_%s'%i
-    cdp_mask = 'CDP_Mask/cdp_Mask_%s'%i
-    Compare_Filt ='Compare/filt_%s'%i
-    Sembl0 = 'Sembl/Sembl_%s'%i
-    Sembl1 = 'Sembl/Sembl_1_%s'%i
-    Sembl2 = 'Sembl/Sembl_2_%s'%i
-    vpick0 = 'Vpick/Vpick_%s'%i
-    vpick1 = 'Vpick/Vpick_1_%s'%i
-    vpick2 = 'Vpick/Vpick_2_%s'%i
-    vint= 'Vint/Vint_%s'%i
-    nmo0 = 'Nmo/Nmo_%s'%i
-    nmo1 = 'Nmo/Nmo_1_%s'%i
-    nmo2 = 'Nmo/Nmo_2_%s'%i
-    dmo2 = 'DMO/Dmo_2_%s'%i
-    # vdip0 = 'Vdip/Vdip_%s'%i
-    # vdip1 = 'Vdip/Vdip_1_%s'%i
-    # vdip2 = 'Vdip/Vdip_2_%s'%i
-    # vseis = 'Vseis/Vseis_%s'%i
-    # Freq= 'Freq/Freq%s'%i
-    # Fmask = 'FMask/FMask_%s'%i
-    # Fmask2='FMask2/FMask2_%s'%i
-    # CdP2 = 'Cdp2/Cdp2_%s'%i
-    # Exp = 'Exp/Exp_%s_'%i
-    # CdP_Ndip = 'CdP_Ndip/CdP_Ndip_%s'%i
-    # CdP_Sdip = 'CdP_Sdip/CdP_Sdip_%s'%i
-    # Cl_cdp = 'Cl_cdp/Cl_cdp_%s'%i
-    # Dip0 = 'Dip0/Dip0_%s'%i
-    # Dip1 = 'Dip1/Dip1_%s'%i
-    # Dip2 = 'Dip2/Dip2_%s'%i
-    # Dip3 = 'Dip3/Dip3_%s'%i
-    # Dip05= 'Dip05/Dip05_%s'%i
-    # Vtr = 'Vtr/Vtr_%s'%i
-    # Vtk = 'Vtk/Vtk_%s'%i
-    # Pnmo = 'Pnmo/Pnmo_%s'%i
-    # PVel = 'PVel/PVel_%s'%i
-    # Pplot = 'Pplot/Pplot_%s'%i
-    # Dips0 = 'Dips0/Dips0_%s'%i
-    # Dips = 'Dips/Dips_%s'%i
-    # xdip = 'Xdip/Xdip_%s'%i
-    # hdip = 'Hdip/hdip_%s'%i
-    # mig = 'MigS/MigS_%s'%i
-    NMO.append(nmo2)
-    CdPs3.append(cdp3)
-    # pNMO.append(Pnmo)
-    Vel_Picks.append(vpick2)
-    Sembs.append(Sembl2)
-    Dmos.append(dmo2)
-    VI.append(vint)
-    Flow(cdp0, 'CDP_R_W8ted/CdP4_%s'%(i), 'bandpass flo=10 | pow pow1=2')
-    Flow(Sembl0, cdp0, 'vscan semblance=y v0=%d dv=20 nv=400 half=y'%V1)
-    Flow(vpick0, Sembl0, 'envelope | scale axis=2 | pick rect1=40 | remap1 pattern=$SOURCE order=2 | window')
-    Flow(nmo0, [cdp0, vpick0],'nmo velocity=${SOURCES[1]} half=y | despike2 wide1=3 wide2=5')
-    Flow(cdp1, [nmo0, vpick0], 'inmo velocity=${SOURCES[1]} half=y')
-    Flow(Sembl1, cdp1, 'vscan semblance=y v0=%d dv=20 nv=400 half=y'%V1)
-    Flow(vpick1, Sembl1, 'envelope | scale axis=2 | pick rect1=40 | remap1 pattern=$SOURCE order=2 | window')
-    Flow(nmo1, [cdp1, vpick1],'nmo velocity=${SOURCES[1]} half=y | despike2 wide1=3 wide2=3')
-    Flow(cdp2, [nmo1, vpick1], 'inmo velocity=${SOURCES[1]} half=y')
-    Flow(Sembl2, cdp2, 'vscan semblance=y str=0.01 v0=%d dv=20 nv=400 half=y'%V1)
-    Flow(vpick2, Sembl2, 'envelope | scale axis=2 | pick rect1=40 | remap1 pattern=$SOURCE order=2 | sfsmooth rect1=200 repeat=5| window')
-    Flow(vint, vpick2, 'smooth rect1=200 repeat=5 |dix rect1=100')
-    Flow(nmo2, [cdp2, vpick2],'nmo velocity=${SOURCES[1]} half=y | despike2 wide1=3 wide2=3')
-#    Flow(dmo2, nmo2, 'transp plane=23 | dmo velhalf=3500 half=y | transp plane=23 | sfdespike2 wide1=3 wide2=3')
-    Flow(cdp3, [nmo2, vpick2], 'inmo velocity=${SOURCES[1]} half=y')
-    # Plot(nmo, nmo, 'sfgrey color=i scalebar=y title="standard nmo"')
-    # Flow(Dip0,cdp,dip(1./V1-1./V2))
-    # Flow(Dip1,cdp,dip(1./V2))
-    # Flow(Dip2,[cdp, Dip0, Dip1],'nmostretch half=y v0=%s | twodip2 dip1=${SOURCES[1]} q0=0 order=3 niter=10 eps=200 lam=40 | window n3=1 | math ref=${SOURCES[2]} output="input+ref" '%V1)
-    # Flow(Dip3, [cdp,Dip2], 'dip idip=${SOURCES[1]} order=3 niter=10 liter=100 rect=50 rect2=20 pmin=0')
-    # Flow([Pnmo,PVel], [cdp, Dip3], 'pnmo dip=${SOURCES[1]} vel=${TARGETS[1]}')
-    # Plot(Pnmo, Pnmo, 'sfgrey color=i scalebar=y title="slope nmo"')
-    # Plot(PVel, PVel, 'graph title="slope velocity" transp=y')
-    # Result(Pplot,[Pnmo, nmo], 'SideBySideAniso')
-    # Flow(Dip05,Dip3,'window min2=500 | despike2 wide1=7 wide2=7')
-    # Flow(Vtr,[cdp, Dip05],'window min2=500 | pveltran v0=%d dv=10 nv=800 dip=${SOURCES[1]}'%V1)
-    # Flow(Vtk,Vtr, 'envelope | scale axis=2 | pick rect1=20 |  window min1=1.2 | remap1 pattern=$SOURCE order=2')
-    #Flow(Dips0, Dip3, 'spray axis=3 n=250 d=0.0335 o=7.705')
-    #Flow(Dips, [cdp, Dips0], 'dip idip=${SOURCES[1]} rect1=25 rect2=10 rect3=25')
-    #Flow(hdip, Dips, 'window n4=1')
-    #Flow(xdip, Dips, 'window f4=1')
-    #Flow(mig, [cdp, hdip, xdip], 'pmig hdip=${SOURCES[1]} xdip=${SOURCES[2]}' )
-Flow('RSF/NMO', NMO, 'rcat ${SOURCES[1:-1]} axis=3')
-# Flow('RSF/pNMO', pNMO, 'rcat ${SOURCES[1:-1]} axis=3')
-Flow('RSF/Vel_Picks', Vel_Picks, 'rcat ${SOURCES[1:-1]} axis=2')
-# Flow('RSF/Filt_NMO', NMO_Sp, 'rcat ${SOURCES[1:-1]} axis=2')
-Flow('RSF/NMO_Stack','RSF/NMO', 'stack axis=2' )
-Flow('RSF/Semblances', Sembs, 'rcat ${SOURCES[1:-1]} axis=3')
-Flow('RSF/DMO', Dmos, 'rcat ${SOURCES[1:-1]} axis=3')
-Flow('RSF/DMO_Stack','RSF/DMO', 'stack axis=2' )
-# Flow('RSF/pNMO_Stack','RSF/pNMO', 'stack axis=2' )
-### NaN in the Velocity
-Flow('RSF/Vel_Picks_Stack','RSF/Vel_Picks', 'clip2 lower=2000 upper=8000 |stack axis=2' )
-Result('Stack/NMO_Stack', 'RSF/NMO_Stack', 'agc rect=20 | grey color=seismic scalebar=y maxval=8 minval=-8 title="nmo Brute Stack", vppen=')
-Flow('Fig/Compare/NMO_Stackp', 'RSF/NMO_Stack', 'prep4plot inp=${SOURCE} out={TARGET} ppi=300')
-# Result('Stack/Filt_NMO_Stack', 'RSF/Filt_NMO_Stack', 'agc rect=20 | grey color=seismic scalebar=y maxval=8 minval=-8 title="Filtered_nmo Brute Stack" ppi=300')
-# Result('Stack/pNMO_Stack', 'RSF/pNMO_Stack', 'despike2 wide1=2 wide2=3 | agc rect1=6000 rect2=50 | grey pclip=95 color=seismic scalebar=y maxval=8 minval=-8 title="slope nmo Brute Stack" ppi=300')
-Plot('RSF/Vel_Picks_Stack','RSF/Vel_Picks_Stack', 'window n2=1 | graph title="velocity function" transp=y')
-Result('RSF/Vel_Picks', 'RSF/Vel_Picks', 'clip2 lower=2000 upper=8000 | despike wide1=100 wide2=50 | sfagc rect1=6500 rect2=200 | put d2=100 label2="CdP" unit2="m"  | grey color=x scalebar=y polarity=y title="NMO Velocity picks"')
-Result('Stack/Vel_Picks_Stack', ['RSF/Vel_Picks_Stack','RSF/Vel_Picks'], 'SideBySideAniso' )
-
-###### Common-offset domain prestack kirchhoff time migration (PSTM)######
-############################################################################
-# velcon('RSF/CdPs3a',
-#        nv=120,      # continuation steps
-#        v0=1500,     # initial velocity
-#        dv=25,       # velocity step
-#        nx=870,     # lateral dimension
-#        nh=70,      # number of offsets
-#        padt=1024,   # time padding
-#        padt2=4096,  # extra time padding
-#        padx=1025,   # lateral padding
-#        dx=100,  # lateral sampling
-#        v1=3500,     # other velocity
-#        vx0=2000,    # semblance muting
-#        vslope=1200, # semblance muting
-#        units='m',   # lateral units
-#        rect1=70,
-#        rect2=70)
-Flow('RSF/Pick_Semblance', ['RSF/Semblances','RSF/Vel_Picks'], 'slice pick=${SOURCES[1]}')
-# Flow('RSF/IntVel',['RSF/Vel_Picks','RSF/Pick_Semblance' ], 'dix weight=${SOURCES[1]} rect1=100 rect2=100')
-Flow('RSF/IntVel', VI, 'rcat ${SOURCES[1:-1]} axis=3')
-Flow('RSF/CdPs3', CdPs3, 'rcat ${SOURCES[1:-1]} axis=3')
-Flow('RSF/CdPs3a','RSF/CdPs3', 'put label2="CdP" d3=25 o3=%s label3="Offset" unit3=m'%Low_bound )
-Flow('RSF/CdPs3T','RSF/CdPs3a', 'transp memsize=20000 plane=23')
-#Flow('RSF/PSTM', ['RSF/CdPs3T','RSF/Vel_Picks'], 'mig2 vel=${SOURCES[1]} apt=50 antialias=5')
-# Flow('RSF/PSTM_D', ['RSF/PSTM', 'RSF/IntVel'], 'time2depth velocity=${SOURCES[1]} intime=y nz=2000 dz=25')
-
-
-
-#########TODO#####
- ###statics###
-#Vo=in header
-# Compare spectra
-# <RSF/PSTM.rsf sfspectra all=y | sfscale axis=1 | sfdots | sfpen
-# <RSF/TIB01.rsf sfspectra all=y | sfscale axis=1 | sfdots | sfpen
-# Plot('spectra',['specTIB1','specPSTM'], 'cat axis=2 ${SOURCES[1]} | dots labels="recon:model" label1=Frequency dots=0 labelsz=10 titlesz=12')
-#Velocity continuation
-# <RSF/PSTM.rsf sfpad beg2=100 end2=100 | sfvelcon vel=1.5 adj=n | sfwindow f2=100 n2=870
-
-
-
-End()
+# ################Interpolate Missing Data ##################
+# ###########################################################
+# xi = np.arange(MinOff, MaxOff)
+# yi = np.arange(Low_bound, High_bound)
+# zi =np.arange(6250)
+# Filtered_line= LoadRsf (Dir,'Masked_line.rsf')
+# Stacks =[]
+# Cube = np.zeros(shape=(6250, len(xi), len(yi)))
+# masker = np.zeros(shape=(len(xi), len(yi)), dtype=np.int)
+# for i in range(len(Filtered_line)):
+#     o, c= Offsets[i], Pointer[i]-Low_bound
+#     print o, c
+#     if Cube[100,o, c] != 0:
+#         Stacks.append((o, c))
+#     masker[o, c] += 1
+#
+#     Cube[:,o, c] += Filtered_line[i]
+#
+# ######Traces observed to be problematic during QC##########
+# ###########################################################
+# ManDeadTr = np.array([[20,39],[20,43],[21,41],[21,110],[23,35],[28,10],[70,48],[81,8],[159,67],[175,26],[187,115],[187,116],[188,111],[188,112],[201,38],[284,55],[285,51],[435,112],[435,116],[435,119],[436,44],[437,108],[437,115],[438,111],[443,55],[443,91],[444,51]])
+# for dt in range(len(ManDeadTr)):
+#     t= ManDeadTr[0]*120+ManDeadTr[1]
+#     masker[Offsets[i], Pointer[i]-Low_bound] = 0 ### ignores all stack in case large noise
+#
+# ###### normalise amplitude where Stacks ########
+# ####### of 2 traces in the same bin   ##########
+# Stacks.sort(key= lambda x: x[0])
+# n= 0
+# while n < len(Stacks):
+#     S = 2
+#     m=n
+#     while Stacks[m] == Stacks[n]:
+#         S +=1
+#         m +=1
+#         if m>len(Stacks):
+#             break
+#     Cube[:,Stacks[n][0], Stacks[n][1]] /= S
+#     n += S-1
+#
+# MESHZ, MESHX = np.meshgrid(zi, xi)
+# DirCdP = Dir[:-3]+'CdP_filt'
+# if __name__ == '__main__':
+#     pool = Pool()
+#     pool.map(Fill_CdP, [(DirCdP, Cube[:,:,o], masker, MESHZ, MESHX, xi, zi, o) for o in range(len(yi))])
+# pool.close()
+# pool.join()
+#
+# ####### Where interpolation failed, put the original data##########
+# #####interpolation fails when there is no gap between traces #####
+# ##################################################################
+# for i in range(len(yi)):
+#     FileName = DirCdP+os.sep+'CdP_Grid_'+str(i)+'.npy'
+#     if os.path.isfile(FileName):
+#         CubeI[:,:,i] = np.load(FileName)
+#     else:
+#         CubeI[:,:,i] = Cube[:,:,i]
+#
+# DirMO = Dir[:-3]+'MO_filt'
+# Meshz, Meshy = np.meshgrid(zi, yi)
+# if __name__ == '__main__':
+#     pool2 = Pool(4)
+#     pool2.map(Fill_MO, [(DirMO, CubeI[:,s,:], masker, Meshz, Meshy, zi, yi,s) for s in range(len(xi))])
+# pool2.close()
+# pool2.join()
+#
+# CubeII = np.zeros(shape=(6250, len(xi), len(yi)))
+# for i in range(len(xi)):
+#     FileName = DirMO+os.sep+'MO_Grid_'+str(s)+'.npy'
+#     if os.path.isfile(FileName):
+#         CubeII[:,i,:] = np.load(FileName)
+#     else:
+#         CubeII[:,i,:] = CubeI[:,i,:]
+# #Weighting
+# CubeII += Cube
+#
+# #### writing CdP
+# if __name__ == '__main__':
+#     pool3 = Pool(12)
+#     pool3.map(SaveCDP, [(i, CubeII[:,:,i].T) for i in range(len(yi))])
+# pool3.close()
+# pool3.join()
+#
+# ##################Import regularized CdPs  ##########################
+# ######################################################################
+# for C in range(len(yi)):
+#     Flow('CDP_R_W8ted/CdP4_%s'%C, 'CDP_R_W8ted/New_CDP_%s.dat'%C, 'sfcsv2rsf | put d1=0.004 label1="Time", unit1="s" d2=50 label2="CdP" unit2="m"| window f2=4 n2=70')
+#
+# ####################### Process CdP #####################################
+# ##### http://www.ahay.org/RSF/book/tccs/nmodeblend/paper_html/paper.html
+# ### The scan could be done as a cube, better?
+# #########################################################################
+# V1= 1500.
+# V2= 10000.
+# Low_bound, High_bound = 162, 1908
+# Dead_CMP=[101,678,69]
+# CdPs, NMO, pNMO, Vel_Picks, P_Vels, CdPs3, Sembs, Dmos, VI = [], [], [], [], [], [], [], [], []
+# for i in range(High_bound-Low_bound):
+#     cdp0 = 'CDP/cdp_%s'%i
+#     cdp1 = 'CDP/cdp_1_%s'%i
+#     cdp2 = 'CDP/cdp_2_%s'%i
+#     cdp3 = 'CDP/cdp_3_%s'%i
+#     cdp_mask = 'CDP_Mask/cdp_Mask_%s'%i
+#     Compare_Filt ='Compare/filt_%s'%i
+#     Sembl0 = 'Sembl/Sembl_%s'%i
+#     Sembl1 = 'Sembl/Sembl_1_%s'%i
+#     Sembl2 = 'Sembl/Sembl_2_%s'%i
+#     vpick0 = 'Vpick/Vpick_%s'%i
+#     vpick1 = 'Vpick/Vpick_1_%s'%i
+#     vpick2 = 'Vpick/Vpick_2_%s'%i
+#     vint= 'Vint/Vint_%s'%i
+#     nmo0 = 'Nmo/Nmo_%s'%i
+#     nmo1 = 'Nmo/Nmo_1_%s'%i
+#     nmo2 = 'Nmo/Nmo_2_%s'%i
+#     dmo2 = 'DMO/Dmo_2_%s'%i
+#     # vdip0 = 'Vdip/Vdip_%s'%i
+#     # vdip1 = 'Vdip/Vdip_1_%s'%i
+#     # vdip2 = 'Vdip/Vdip_2_%s'%i
+#     # vseis = 'Vseis/Vseis_%s'%i
+#     # Freq= 'Freq/Freq%s'%i
+#     # Fmask = 'FMask/FMask_%s'%i
+#     # Fmask2='FMask2/FMask2_%s'%i
+#     # CdP2 = 'Cdp2/Cdp2_%s'%i
+#     # Exp = 'Exp/Exp_%s_'%i
+#     # CdP_Ndip = 'CdP_Ndip/CdP_Ndip_%s'%i
+#     # CdP_Sdip = 'CdP_Sdip/CdP_Sdip_%s'%i
+#     # Cl_cdp = 'Cl_cdp/Cl_cdp_%s'%i
+#     # Dip0 = 'Dip0/Dip0_%s'%i
+#     # Dip1 = 'Dip1/Dip1_%s'%i
+#     # Dip2 = 'Dip2/Dip2_%s'%i
+#     # Dip3 = 'Dip3/Dip3_%s'%i
+#     # Dip05= 'Dip05/Dip05_%s'%i
+#     # Vtr = 'Vtr/Vtr_%s'%i
+#     # Vtk = 'Vtk/Vtk_%s'%i
+#     # Pnmo = 'Pnmo/Pnmo_%s'%i
+#     # PVel = 'PVel/PVel_%s'%i
+#     # Pplot = 'Pplot/Pplot_%s'%i
+#     # Dips0 = 'Dips0/Dips0_%s'%i
+#     # Dips = 'Dips/Dips_%s'%i
+#     # xdip = 'Xdip/Xdip_%s'%i
+#     # hdip = 'Hdip/hdip_%s'%i
+#     # mig = 'MigS/MigS_%s'%i
+#     NMO.append(nmo2)
+#     CdPs3.append(cdp3)
+#     # pNMO.append(Pnmo)
+#     Vel_Picks.append(vpick2)
+#     Sembs.append(Sembl2)
+#     Dmos.append(dmo2)
+#     VI.append(vint)
+#     t=i
+#     Flow(cdp0, 'CDP_R_W8ted/CdP4_%s'%(i), 'bandpass flo=10 | pow pow1=2| stretch rule=d datum=%s')
+#     Flow(Sembl0, cdp0, 'vscan semblance=y v0=%d dv=20 nv=400 half=y'%V1)
+#     Flow(vpick0, Sembl0, 'envelope | scale axis=2 | pick rect1=40 | remap1 pattern=$SOURCE order=2 | window')
+#     Flow(nmo0, [cdp0, vpick0],'nmo velocity=${SOURCES[1]} half=y | despike2 wide1=3 wide2=5')
+#     Flow(cdp1, [nmo0, vpick0], 'inmo velocity=${SOURCES[1]} half=y')
+#     Flow(Sembl1, cdp1, 'vscan semblance=y v0=%d dv=20 nv=400 half=y'%V1)
+#     Flow(vpick1, Sembl1, 'envelope | scale axis=2 | pick rect1=40 | remap1 pattern=$SOURCE order=2 | window')
+#     Flow(nmo1, [cdp1, vpick1],'nmo velocity=${SOURCES[1]} half=y | despike2 wide1=3 wide2=3')
+#     Flow(cdp2, [nmo1, vpick1], 'inmo velocity=${SOURCES[1]} half=y')
+#     Flow(Sembl2, cdp2, 'vscan semblance=y str=0.01 v0=%d dv=20 nv=400 half=y'%V1)
+#     Flow(vpick2, Sembl2, 'envelope | scale axis=2 | pick rect1=40 | remap1 pattern=$SOURCE order=2 | sfsmooth rect1=200 repeat=5| window')
+#     Flow(vint, vpick2, 'smooth rect1=200 repeat=5 |dix rect1=100')
+#     Flow(nmo2, [cdp2, vpick2],'nmo velocity=${SOURCES[1]} half=y | despike2 wide1=3 wide2=3')
+# #    Flow(dmo2, nmo2, 'transp plane=23 | dmo velhalf=3500 half=y | transp plane=23 | sfdespike2 wide1=3 wide2=3')
+#     Flow(cdp3, [nmo2, vpick2], 'inmo velocity=${SOURCES[1]} half=y')
+#     # Plot(nmo, nmo, 'sfgrey color=i scalebar=y title="standard nmo"')
+#     # Flow(Dip0,cdp,dip(1./V1-1./V2))
+#     # Flow(Dip1,cdp,dip(1./V2))
+#     # Flow(Dip2,[cdp, Dip0, Dip1],'nmostretch half=y v0=%s | twodip2 dip1=${SOURCES[1]} q0=0 order=3 niter=10 eps=200 lam=40 | window n3=1 | math ref=${SOURCES[2]} output="input+ref" '%V1)
+#     # Flow(Dip3, [cdp,Dip2], 'dip idip=${SOURCES[1]} order=3 niter=10 liter=100 rect=50 rect2=20 pmin=0')
+#     # Flow([Pnmo,PVel], [cdp, Dip3], 'pnmo dip=${SOURCES[1]} vel=${TARGETS[1]}')
+#     # Plot(Pnmo, Pnmo, 'sfgrey color=i scalebar=y title="slope nmo"')
+#     # Plot(PVel, PVel, 'graph title="slope velocity" transp=y')
+#     # Result(Pplot,[Pnmo, nmo], 'SideBySideAniso')
+#     # Flow(Dip05,Dip3,'window min2=500 | despike2 wide1=7 wide2=7')
+#     # Flow(Vtr,[cdp, Dip05],'window min2=500 | pveltran v0=%d dv=10 nv=800 dip=${SOURCES[1]}'%V1)
+#     # Flow(Vtk,Vtr, 'envelope | scale axis=2 | pick rect1=20 |  window min1=1.2 | remap1 pattern=$SOURCE order=2')
+#     #Flow(Dips0, Dip3, 'spray axis=3 n=250 d=0.0335 o=7.705')
+#     #Flow(Dips, [cdp, Dips0], 'dip idip=${SOURCES[1]} rect1=25 rect2=10 rect3=25')
+#     #Flow(hdip, Dips, 'window n4=1')
+#     #Flow(xdip, Dips, 'window f4=1')
+#     #Flow(mig, [cdp, hdip, xdip], 'pmig hdip=${SOURCES[1]} xdip=${SOURCES[2]}' )
+# Flow('RSF/NMO', NMO, 'rcat ${SOURCES[1:-1]} axis=3')
+# # Flow('RSF/pNMO', pNMO, 'rcat ${SOURCES[1:-1]} axis=3')
+# Flow('RSF/Vel_Picks', Vel_Picks, 'rcat ${SOURCES[1:-1]} axis=2')
+# # Flow('RSF/Filt_NMO', NMO_Sp, 'rcat ${SOURCES[1:-1]} axis=2')
+# Flow('RSF/NMO_Stack','RSF/NMO', 'stack axis=2' )
+# Flow('RSF/Semblances', Sembs, 'rcat ${SOURCES[1:-1]} axis=3')
+# Flow('RSF/DMO', Dmos, 'rcat ${SOURCES[1:-1]} axis=3')
+# Flow('RSF/DMO_Stack','RSF/DMO', 'stack axis=2' )
+# # Flow('RSF/pNMO_Stack','RSF/pNMO', 'stack axis=2' )
+# ### NaN in the Velocity
+# Flow('RSF/Vel_Picks_Stack','RSF/Vel_Picks', 'clip2 lower=2000 upper=8000 |stack axis=2' )
+# Result('Stack/NMO_Stack', 'RSF/NMO_Stack', 'agc rect=20 | grey color=seismic scalebar=y maxval=8 minval=-8 title="nmo Brute Stack", vppen=')
+# Flow('Fig/Compare/NMO_Stackp', 'RSF/NMO_Stack', 'prep4plot inp=${SOURCE} out={TARGET} ppi=300')
+# # Result('Stack/Filt_NMO_Stack', 'RSF/Filt_NMO_Stack', 'agc rect=20 | grey color=seismic scalebar=y maxval=8 minval=-8 title="Filtered_nmo Brute Stack" ppi=300')
+# # Result('Stack/pNMO_Stack', 'RSF/pNMO_Stack', 'despike2 wide1=2 wide2=3 | agc rect1=6000 rect2=50 | grey pclip=95 color=seismic scalebar=y maxval=8 minval=-8 title="slope nmo Brute Stack" ppi=300')
+# Plot('RSF/Vel_Picks_Stack','RSF/Vel_Picks_Stack', 'window n2=1 | graph title="velocity function" transp=y')
+# Result('RSF/Vel_Picks', 'RSF/Vel_Picks', 'clip2 lower=2000 upper=8000 | despike wide1=100 wide2=50 | sfagc rect1=6500 rect2=200 | put d2=100 label2="CdP" unit2="m"  | grey color=x scalebar=y polarity=y title="NMO Velocity picks"')
+# Result('Stack/Vel_Picks_Stack', ['RSF/Vel_Picks_Stack','RSF/Vel_Picks'], 'SideBySideAniso' )
+#
+# ###### Common-offset domain prestack kirchhoff time migration (PSTM)######
+# ############################################################################
+# # velcon('RSF/CdPs3a',
+# #        nv=120,      # continuation steps
+# #        v0=1500,     # initial velocity
+# #        dv=25,       # velocity step
+# #        nx=870,     # lateral dimension
+# #        nh=70,      # number of offsets
+# #        padt=1024,   # time padding
+# #        padt2=4096,  # extra time padding
+# #        padx=1025,   # lateral padding
+# #        dx=100,  # lateral sampling
+# #        v1=3500,     # other velocity
+# #        vx0=2000,    # semblance muting
+# #        vslope=1200, # semblance muting
+# #        units='m',   # lateral units
+# #        rect1=70,
+# #        rect2=70)
+# Flow('RSF/Pick_Semblance', ['RSF/Semblances','RSF/Vel_Picks'], 'slice pick=${SOURCES[1]}')
+# # Flow('RSF/IntVel',['RSF/Vel_Picks','RSF/Pick_Semblance' ], 'dix weight=${SOURCES[1]} rect1=100 rect2=100')
+# Flow('RSF/IntVel', VI, 'rcat ${SOURCES[1:-1]} axis=3')
+# Flow('RSF/CdPs3', CdPs3, 'rcat ${SOURCES[1:-1]} axis=3')
+# Flow('RSF/CdPs3a','RSF/CdPs3', 'put label2="CdP" d3=25 o3=%s label3="Offset" unit3=m'%Low_bound )
+# Flow('RSF/CdPs3T','RSF/CdPs3a', 'transp memsize=20000 plane=23')
+# Flow('RSF/PSTM', ['RSF/CdPs3T','RSF/Vel_Picks'], 'mig2 vel=${SOURCES[1]} apt=25 antialias=5')
+# # Flow('RSF/PSTM_D', ['RSF/PSTM', 'RSF/IntVel'], 'time2depth velocity=${SOURCES[1]} intime=y nz=2000 dz=25')
+#
+#
+#
+# #########TODO#####
+#  ###statics###
+# #Vo=in header
+# # Compare spectra
+# # <RSF/PSTM.rsf sfspectra all=y | sfscale axis=1 | sfdots | sfpen
+# # <RSF/TIB01.rsf sfspectra all=y | sfscale axis=1 | sfdots | sfpen
+# # Plot('spectra',['specTIB1','specPSTM'], 'cat axis=2 ${SOURCES[1]} | dots labels="recon:model" label1=Frequency dots=0 labelsz=10 titlesz=12')
+# #Velocity continuation
+# # <RSF/PSTM.rsf sfpad beg2=100 end2=100 | sfvelcon vel=1.5 adj=n | sfwindow f2=100 n2=870
+#
+#
+#
+# End()

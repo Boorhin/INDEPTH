@@ -431,7 +431,7 @@ Shifter=np.zeros(len(Dspl))
 Shifter= 2*Delta*(abs(Vel_st-Vo))/(Vo*Vel_st)
 Dsh = Shifter.min()
 Shifter -= Dsh
-np.savetxt(Dir+os.sep+'Vel_stack.dat', Shifter, delimiter=',')
+np.save(Dir+os.sep+'Vel_stack', Shifter)
 
 
 ########Interpolate Missing Data ##########
@@ -445,10 +445,11 @@ Stacks =[]
 Cube = np.zeros(shape=(6250, len(xi), len(yi)))
 masker = np.zeros(shape=(len(xi), len(yi)), dtype=np.int)
 for i in range(len(Filtered_line)):
-    if Cube[100,Offsets[i], Pointer[i]-Low_bound] != 0:
-        Stacks.append((Offsets[i], Pointer[i]-Low_bound))
-    masker[Offsets[i], Pointer[i]-Low_bound] += 1
-    Cube[:,Offsets[i], Pointer[i]-Low_bound] += Filtered_line[i]
+    o, c= Offsets[i], Pointer[i]-Low_bound
+    if Cube[100,o, c] != 0:
+        Stacks.append((o, c))
+    masker[o, c] += 1
+    Cube[:,o, c] += Filtered_line[i]
 
 ######Traces observed to be problematic during QC##########
 ###########################################################
@@ -531,7 +532,7 @@ for i in range(594,600):
      np.save(DirCdP+os.sep+'CdP_Grid_'+str(i)+'.npy',Cube[:,:,i])
 for i in range(611,620):
      np.save(DirCdP+os.sep+'CdP_Grid_'+str(i)+'.npy',Cube[:,:,i])
-np.save(DirCdP+os.sep+'CdP_Grid_'+str(869)+'.npy',Cube[:,:,i])
+#np.save(DirCdP+os.sep+'CdP_Grid_'+str(869)+'.npy',Cube[:,:,i])
 CubeI = np.zeros(shape=(6250, len(xi), len(yi)))
 for i in range(len(yi)):
     CubeI[:,:,i] = np.load(DirCdP+os.sep+'CdP_Grid_'+str(i)+'.npy')
@@ -543,7 +544,7 @@ if __name__ == '__main__':
     pool2.map(Fill_MO, [(DirMO, CubeI[:,s,:], masker, Meshz, Meshy, zi, yi,s) for s in range(len(xi))])
 pool2.close()
 pool2.join()
-# CubeII = np.zeros(shape=(6250, len(xi), len(yi)))
+CubeII = np.zeros(shape=(6250, len(xi), len(yi)))
 ########## Save the regularized data in txt for madagascar #############
 # for i in range(len(xi)):
 #     # slice=np.load(DirMO+os.sep+'MO_Grid_'+str(i)+'.npy')
