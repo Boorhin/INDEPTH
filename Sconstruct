@@ -7,6 +7,7 @@ os.environ['SFPENOPTS'] = 'bgcolor=w'
 import matplotlib.pyplot as plt
 import scipy.interpolate as SC
 from multiprocessing import Pool
+from Methods import Regularize
 
 def twodip2(nj1,nj2,extra):
     return '''twodip2 order=3 nj1=%d nj2=%d eps=8 verb=n gauss=n''' % (nj1,nj2) + extra
@@ -354,21 +355,22 @@ while n < len(Stacks):
     Cube[:,Stacks[n][0], Stacks[n][1]] /= S
     n += S-1
 
-MESHZ, MESHX = np.meshgrid(zi, xi)
-DirCdP = Dir[:-3]+'CdP_filt'
-CubeI = np.zeros(shape=(6250, len(xi), len(yi)))
-for o in range(len(yi)):
-    CubeI[:,:,o]= Fill_CdP((DirCdP, Cube[:,:,o], masker, MESHZ, MESHX, xi, zi, o))
-DirMO = Dir[:-3]+'MO_filt'
-Meshz, Meshy = np.meshgrid(zi, yi)
-CubeII = np.zeros(shape=(6250, len(xi), len(yi)))
-for s in range(len(xi)):
-    CubeII[:,s,:]=Fill_MO((DirMO, CubeI[:,s,:], masker, Meshz, Meshy, zi, yi,s))
-CubeII += Cube[:]
-Cube_Name='RSF/CubeII.rsf'
-Out = m8r.Output(Dir+os.sep+Cube_Name)
-Out.write(CubeII.T)#.data
-Cube, CubeI =None,None #
+CubeII = Regularize.Smooth_Data(xi, yi, zi, Dir, Cube)
+# MESHZ, MESHX = np.meshgrid(zi, xi)
+# DirCdP = Dir[:-3]+'CdP_filt'
+# CubeI = np.zeros(shape=(6250, len(xi), len(yi)))
+# for o in range(len(yi)):
+#     CubeI[:,:,o]= Fill_CdP((DirCdP, Cube[:,:,o], masker, MESHZ, MESHX, xi, zi, o))
+# DirMO = Dir[:-3]+'MO_filt'
+# Meshz, Meshy = np.meshgrid(zi, yi)
+# CubeII = np.zeros(shape=(6250, len(xi), len(yi)))
+# for s in range(len(xi)):
+#     CubeII[:,s,:]=Fill_MO((DirMO, CubeI[:,s,:], masker, Meshz, Meshy, zi, yi,s))
+# CubeII += Cube[:]
+# Cube_Name='RSF/CubeII.rsf'
+# Out = m8r.Output(Dir+os.sep+Cube_Name)
+# Out.write(CubeII.T)#.data
+# Cube, CubeI =None,None #
 # if __name__ == 'SCons.Script':
 #     print 'here'
 #     pool = Pool(12)
