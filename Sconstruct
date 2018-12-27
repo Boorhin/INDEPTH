@@ -462,7 +462,7 @@ Flow('RSF/Semblances', Sembs, 'rcat ${SOURCES[1:-1]} axis=3')
 # #        units='m',   # lateral units
 # #        rect1=70,
 # #        rect2=70)
-# Flow('RSF/Pick_Semblance', ['RSF/Semblances','RSF/Vel_Picks'], 'slice pick=${SOURCES[1]}')
+Flow('RSF/Pick_3DSemblance', ['RSF/Semblances','RSF/3DVelPicking'], 'slice pick=${SOURCES[1]}')
 # Flow('RSF/IntVel',['RSF/Vel_Picks','RSF/Pick_Semblance' ], 'dix weight=${SOURCES[1]} rect1=100 rect2=100')
 # Flow('RSF/IntVel', VI, 'rcat ${SOURCES[1:-1]} axis=3')
 Flow('RSF/CdPs3', CdPs3, 'rcat ${SOURCES[1:-1]} axis=3')
@@ -470,8 +470,8 @@ Flow('RSF/CdPs3', CdPs3, 'rcat ${SOURCES[1:-1]} axis=3')
 Flow('RSF/CdPs3a','RSF/CdPs3', 'sfagc rect1=6500 rect2=5 rect3=20 |put label2="CdP" d3=25 o3=%s label3="Offset" unit3=m'%Low_bound )
 # Flow('RSF/3DSemblance', 'RSF/CdPs3a', 'vscan semblance=y v0=%d v1=4500 dv=20 nv=400 half=y'%V1 )
 Flow('RSF/CdPs3T','RSF/CdPs3a', 'transp memsize=20000 plane=23')
-Flow('RSF/3DVelPicking2','RSF/Semblances','agc rect1=6500 rect2=1 rect3=20 | envelope | scale axis=2 | sfpick vel0=%s rect1=40 rect2=10 rect3=10'%(V1))
-Flow('RSF/PSTM', ['RSF/CdPs3T','RSF/3DVelPicking'], 'mig2 vel=${SOURCES[1]} apt=50 antialias=3')
+#Flow('RSF/3DVelPicking','RSF/Semblances','envelope | scale axis=2 | sfpick vel0=%s rect1=40 rect2=10 rect3=10'%(V1))
+Flow('RSF/PSTM' , ['RSF/CdPs3T','RSF/3DVelPicking'], 'mig2 vel=${SOURCES[1]} apt=870 antialias=1', split=[3,64,[0]],reduce='add')
 # Flow('RSF/PSTM_D', ['RSF/PSTM', 'RSF/IntVel'], 'time2depth velocity=${SOURCES[1]} intime=y nz=2000 dz=25')
 #
 #
