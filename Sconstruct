@@ -133,7 +133,7 @@ Headers = Files[:]
 L, H, TT    = [], [], []
 for a in range(len(Files)):
     Headers[a] = Files[a][:-4]+'_T'+Files[a][-4:]
-    L, H = getData (Dir, Files[a], Headers[a])
+    L, H = getData(Dir, Files[a], Headers[a])
     TT = H[-1,1]
 
 #################### Data consolidation ##################
@@ -160,7 +160,13 @@ for i in range(len(Pointer)):
 Low_bound, High_bound = BinP[0], BinP[-1]+1
 MinOff, MaxOff= int(Offsets.min()),int(Offsets.max()//1)+1
 
-#### include diving wave topography residual velocity##############
+############ Save for headers ###########
+np.savetxt(Dir[:-3]+'Utils/Tr.txt', np.arange(Low_bound, High_bound), delimiter=',')
+np.savetxt(Dir[:-3]+'Utils/X.txt', Spline[Low_bound: High_bound,0], delimiter=',')
+np.savetxt(Dir[:-3]+'Utils/Y.txt', Spline[Low_bound: High_bound,1], delimiter=',')
+np.savetxt(Dir[:-3]+'Utils/Z.txt', Spline[Low_bound: High_bound,2], delimiter=',')
+
+#### include diving wave topography  velocity##############
 ###################################################################
 Vels = np.genfromtxt('/media/julien/NuDrive/Himalayas/Tomo.txt', names=True)
 
@@ -181,19 +187,19 @@ while i < len(Vels):
 TopX, TopY,TopV =np.array(TopX),np.array(TopY),np.array(TopV)
 
 ########## Match unknown tomographic coord to CMP profile
-Bin=100
-Dspl=np.zeros(len(Spline), dtype =np.float)
-for i in range(3):
-    Dspl[1:] += (Spline[1:,i]-Spline[:-1,i])**2
-Dspl = Dspl**.5
-Dspl = Dspl.cumsum()
-XV_Spline=SC.UnivariateSpline(TopX, TopV, k=2, ext='const')
-Delta = (Dspl[-1]-TopX[-1])//2
-TopX_Spl = np.arange(-Delta,TopX[-1]+Delta, Bin)
-Vel_tr = np.zeros(len(Pointer))
-for i in range(len(Pointer)):
-    Vel_tr[i]= XV_Spline(TopX_Spl[Pointer[i]-Low_bound])
-np.savetxt(Dir+os.sep+'Tr_Velocity.dat', Vel_tr, delimiter=',')
+# Bin=100
+# Dspl=np.zeros(len(Spline), dtype =np.float)
+# for i in range(3):
+#     Dspl[1:] += (Spline[1:,i]-Spline[:-1,i])**2
+# Dspl = Dspl**.5
+# Dspl = Dspl.cumsum()
+# XV_Spline=SC.UnivariateSpline(TopX, TopV, k=2, ext='const')
+# Delta = (Dspl[-1]-TopX[-1])//2
+# TopX_Spl = np.arange(-Delta,TopX[-1]+Delta, Bin)
+# Vel_tr = np.zeros(len(Pointer))
+# for i in range(len(Pointer)):
+#     Vel_tr[i]= XV_Spline(TopX_Spl[Pointer[i]-Low_bound])
+# np.savetxt(Dir+os.sep+'Tr_Velocity.dat', Vel_tr, delimiter=',')
 
 
 
@@ -289,7 +295,7 @@ np.savetxt(Dir+os.sep+'Tr_Velocity.dat', Vel_tr, delimiter=',')
 # ################Interpolate Missing Data ##################
 # ###########################################################
 # xi = np.arange(MinOff, MaxOff+1)
-yi = np.arange(Low_bound, High_bound+1)
+yi = np.arange(Low_bound, High_bound)
 # zi =np.arange(6250)
 # Filtered_line= LoadRsf (Dir,'Masked_line.rsf')
 # Stacks =[]
@@ -471,7 +477,16 @@ Flow('RSF/CdPs3a','RSF/CdPs3', 'sfagc rect1=6500 rect2=5 rect3=20 |put label2="C
 # Flow('RSF/3DSemblance', 'RSF/CdPs3a', 'vscan semblance=y v0=%d v1=4500 dv=20 nv=400 half=y'%V1 )
 Flow('RSF/CdPs3T','RSF/CdPs3a', 'transp memsize=20000 plane=23')
 #Flow('RSF/3DVelPicking','RSF/Semblances','envelope | scale axis=2 | sfpick vel0=%s rect1=40 rect2=10 rect3=10'%(V1))
-Flow('RSF/PSTM' , ['RSF/CdPs3T','RSF/3DVelPicking'], 'mig2 vel=${SOURCES[1]} apt=870 antialias=1', split=[3,64,[0]],reduce='add')
+#Flow('RSF/PSTM' , ['RSF/CdPs3T','RSF/3DVelPicking'], 'mig2 vel=${SOURCES[1]} apt=870 antialias=3', split=[3,64,[0]],reduce='add')
+
+############### Generate a SEGY file
+head = ['Utils/Tr','Utils/X','Utils/Y','Utils/Z']
+for f in head:
+    Flow(f,f+'.txt','sfcsv2rsf| dd type=int')
+Flow('RSF/PSTM_Theader.rsf', ['RSF/PSTM.rsf', head[0], head[1], head[2],head[3]],' segyheader tracl=${SOURCES[1]} cdpx=${SOURCES[2]} cdpy=${SOURCES[3]} gelev=${SOURCES[4]}' )
+Flow('TIB01_PSTM.sgy', ['RSF/PSTM.rsf','RSF/PSTM_Theader.rsf'], 'sfsegywrite tfile=${SOURCES[1]} tape=${TARGET}')
+#Flow('RSF/TIB01_Ts', ['RSF/TIB01_T', 'Utils/Tr_Velocity'], 'headermath key=unknown x1="${SOURCES[1]}" output=x1')
+
 # Flow('RSF/PSTM_D', ['RSF/PSTM', 'RSF/IntVel'], 'time2depth velocity=${SOURCES[1]} intime=y nz=2000 dz=25')
 #
 #
