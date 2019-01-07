@@ -1,3 +1,3 @@
 __all__ = [
-	'Regularize.py'
+	'Regularize.py', 'Prepare.py'
 	]
